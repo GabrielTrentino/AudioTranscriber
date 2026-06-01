@@ -242,7 +242,7 @@ def build_quality_section(app, frame: ttk.Frame, padding: dict) -> None:
 
     app.identify_speakers_btn = ttk.Checkbutton(
         options_frame,
-        text="Identificar falantes (experimental — pyannote)",
+        text="Identificar falantes (local, sem Hugging Face)",
         variable=app.identify_speakers,
     )
     app.identify_speakers_btn.pack(anchor="w", pady=(4, 0))

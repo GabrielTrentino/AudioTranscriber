@@ -49,15 +49,13 @@ python -m audiotranscriber queue jobs.json a.mp3 b.mp4 --run
 
 Formatos: `txt`, `srt`, `vtt`, `json`.
 
-### Identificar falantes (experimental)
+### Identificar falantes (opcional)
 
-- GUI: marque **Identificar falantes (experimental — pyannote)** antes de transcrever.
-- CLI: `--diarize`
-- Teste isolado: `python scripts/test_pyannote_diarization.py audio.mp3 --transcribe`
-- Instalação: `pip install "audiotranscriber[diarization]"`, aceite os termos em [speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1), defina `HF_TOKEN`.
-- Modelos baixam **uma vez** (cache Hugging Face); depois funciona offline.
-- Rótulos genéricos (`SPEAKER_00`, …), não o nome do narrador. Para voltar ao fluxo sem diarização, desmarque a opção.
-- Backend legado WhisperX: `set DIARIZATION_BACKEND=whisperx` e `pip install "audiotranscriber[diarization-whisperx]"`.
+- **Local, sem Hugging Face** — agrupa trechos por voz (MFCC + scikit-learn); rótulos `SPEAKER_00`, `SPEAKER_01`, …
+- GUI: marque **Identificar falantes (local, sem Hugging Face)** ou CLI `--diarize`
+- Instalação: `pip install "audiotranscriber[diarization]"` (só na versão Python; o `.exe` não inclui este extra)
+- Teste: `python scripts/test_pyannote_diarization.py audio.mp3 --transcribe`
+- Qualidade inferior a pyannote em áudio difícil; backends alternativos: `DIARIZATION_BACKEND=pyannote` ou `whisperx` (exigem HF/modelos extras)
 
 ## Interface gráfica (recomendado)
 

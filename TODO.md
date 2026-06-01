@@ -34,18 +34,18 @@ Prioridade: **P0** crítico → **P2** desejável.
 
 ## P2 — Produto e escala
 
-- [ ] CLI (`python -m audiotranscriber …`)
-- [ ] Saída `.srt` / `.vtt` / JSON com segmentos
-- [ ] Fila de jobs com retomada (lote longo)
-- [ ] Diarização opcional (WhisperX / pyannote) como extra
-- [ ] Checagem de dependências no startup do `.exe`
-- [ ] `docs/ARCHITECTURE.md` com diagramas
-- [ ] Docker para API headless
+- [x] CLI (`python -m audiotranscriber …`)
+- [x] Saída `.srt` / `.vtt` / JSON com segmentos
+- [x] Fila de jobs com retomada (lote longo)
+- [x] Diarização opcional (WhisperX / pyannote) como extra
+- [x] Checagem de dependências no startup do `.exe`
+- [x] `docs/ARCHITECTURE.md` com diagramas
+- [x] Docker para API headless
 
 ## P2 — Segurança (se API exposta na rede)
 
-- [ ] Auth ou bind apenas em `127.0.0.1` por padrão
-- [ ] Rate limiting e CORS explícito
+- [x] Auth ou bind apenas em `127.0.0.1` por padrão
+- [x] Rate limiting e CORS explícito
 
 ---
 

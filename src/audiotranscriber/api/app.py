@@ -5,16 +5,39 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 
+from audiotranscriber.api.rate_limit import RateLimitMiddleware
 from audiotranscriber.api.security import ApiKeyMiddleware
 from audiotranscriber.config import get_app_config
 from audiotranscriber.core.settings import TranscriptionSettings
 from audiotranscriber.services import TranscriptionService
 
 app = FastAPI(title="AudioTranscriber")
-app.add_middleware(ApiKeyMiddleware)
 _executor = ThreadPoolExecutor(max_workers=1)
 _service = TranscriptionService()
+
+
+def _setup_middleware() -> None:
+    cfg = get_app_config()
+    if cfg.rate_limit_requests > 0 and cfg.rate_limit_window_seconds > 0:
+        app.add_middleware(
+            RateLimitMiddleware,
+            max_requests=cfg.rate_limit_requests,
+            window_seconds=cfg.rate_limit_window_seconds,
+        )
+    app.add_middleware(ApiKeyMiddleware)
+    if cfg.cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cfg.cors_origins,
+            allow_credentials=True,
+            allow_methods=["GET", "POST"],
+            allow_headers=["*"],
+        )
+
+
+_setup_middleware()
 
 
 @app.get("/health")

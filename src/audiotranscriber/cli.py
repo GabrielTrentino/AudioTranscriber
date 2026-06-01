@@ -52,6 +52,7 @@ def cmd_transcribe(args: argparse.Namespace) -> int:
             args.output_name,
             settings=settings,
             include_timestamps=args.timestamps,
+            export_format=args.export_format,
             on_progress=_progress if not args.quiet else None,
         )
     except Exception as exc:
@@ -94,6 +95,7 @@ def cmd_batch(args: argparse.Namespace) -> int:
                 target,
                 settings=settings,
                 include_timestamps=args.timestamps,
+                export_format=args.export_format,
                 on_progress=file_progress,
             )
             print(out)
@@ -125,6 +127,13 @@ def build_parser() -> argparse.ArgumentParser:
     common.add_argument("--memory-profile", dest="memory_profile")
     common.add_argument("--compute-type", dest="compute_type")
     common.add_argument("--beam-size", dest="beam_size", type=int)
+    common.add_argument(
+        "--format",
+        dest="export_format",
+        choices=("txt", "srt", "vtt", "json"),
+        default="txt",
+        help="Formato de saída (padrão: txt)",
+    )
     common.add_argument(
         "--timestamps",
         action="store_true",

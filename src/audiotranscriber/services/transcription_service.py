@@ -4,6 +4,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from audiotranscriber.core.exceptions import TranscriptionCancelled
+from audiotranscriber.core.exporters import format_export
 from audiotranscriber.core.formatter import format_segments
 from audiotranscriber.core.memory import resolve_memory_settings
 from audiotranscriber.core.model_manager import ModelManager, get_model_manager
@@ -22,17 +23,35 @@ def _resolve_language(language: str) -> str | None:
     return language.strip()
 
 
-def resolve_output_filename(name: str | None, input_path: Path) -> str:
+def resolve_output_filename(
+    name: str | None,
+    input_path: Path,
+    export_format: str = "txt",
+) -> str:
+    ext = _extension_for_format(export_format)
     if not name or not name.strip():
-        return f"{input_path.stem}.txt"
+        return f"{input_path.stem}{ext}"
 
     filename = name.strip()
-    if not filename.lower().endswith(".txt"):
-        filename = f"{filename}.txt"
+    lower = filename.lower()
+    known = (".txt", ".srt", ".vtt", ".json")
+    if not any(lower.endswith(suffix) for suffix in known):
+        filename = f"{filename}{ext}"
 
     for char in '<>:"/\\|?*':
         filename = filename.replace(char, "_")
     return filename
+
+
+def _extension_for_format(export_format: str) -> str:
+    fmt = export_format.lower()
+    if fmt == "srt":
+        return ".srt"
+    if fmt == "vtt":
+        return ".vtt"
+    if fmt == "json":
+        return ".json"
+    return ".txt"
 
 
 class TranscriptionService:
@@ -51,16 +70,19 @@ class TranscriptionService:
         *,
         settings: TranscriptionSettings | None = None,
         include_timestamps: bool | None = None,
+        export_format: str = "txt",
         on_progress: Callable[[float, str | None], None] | None = None,
         is_cancelled: Callable[[], bool] | None = None,
     ) -> str:
         cfg = settings or TranscriptionSettings.from_env()
+        fmt = export_format.lower()
 
         output_format = None
-        if include_timestamps is True:
-            output_format = "time"
-        elif include_timestamps is False:
-            output_format = "line"
+        if fmt == "txt":
+            if include_timestamps is True:
+                output_format = "time"
+            elif include_timestamps is False:
+                output_format = "line"
 
         _check_cancelled(is_cancelled)
 
@@ -100,6 +122,8 @@ class TranscriptionService:
         if on_progress:
             on_progress(1.0, "Salvando arquivo… 100%")
 
+        if fmt in ("srt", "vtt", "json"):
+            return format_export(collected, fmt)
         return format_segments(collected, output_format)
 
     def save_transcription(
@@ -108,9 +132,12 @@ class TranscriptionService:
         output_dir: Path,
         text: str,
         output_name: str | None = None,
+        export_format: str = "txt",
     ) -> Path:
         output_dir.mkdir(parents=True, exist_ok=True)
-        output_file = output_dir / resolve_output_filename(output_name, input_path)
+        output_file = output_dir / resolve_output_filename(
+            output_name, input_path, export_format
+        )
         output_file.write_text(text, encoding="utf-8")
         return output_file
 
@@ -122,6 +149,7 @@ class TranscriptionService:
         *,
         settings: TranscriptionSettings | None = None,
         include_timestamps: bool = False,
+        export_format: str = "txt",
         on_progress: Callable[[float, str | None], None] | None = None,
         is_cancelled: Callable[[], bool] | None = None,
     ) -> Path:
@@ -129,7 +157,14 @@ class TranscriptionService:
             input_path,
             settings=settings,
             include_timestamps=include_timestamps,
+            export_format=export_format,
             on_progress=on_progress,
             is_cancelled=is_cancelled,
         )
-        return self.save_transcription(input_path, output_dir, text, output_name)
+        return self.save_transcription(
+            input_path,
+            output_dir,
+            text,
+            output_name,
+            export_format=export_format,
+        )

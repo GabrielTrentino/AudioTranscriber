@@ -63,16 +63,16 @@ class TranscriptionController:
         output_name: str | None,
         settings: TranscriptionSettings,
         include_timestamps: bool,
-        identify_speakers: bool = False,
+        # identify_speakers: bool = False,
         *,
         on_progress: Callable[[float, str | None], None],
         is_cancelled: Callable[[], bool],
         log: Callable[[str], None],
     ) -> Path:
-        on_progress(0.0, "Preparando arquivo… 0%")
+        on_progress(0.0, "preparing")
         log(f"transcribe {input_path.name} -> {output_dir}")
-        if identify_speakers:
-            log("identificação de falantes ativada")
+        # if identify_speakers:
+        #     log("identificação de falantes ativada")
         try:
             output_file = self._service.transcribe_to_file(
                 input_path,
@@ -80,7 +80,7 @@ class TranscriptionController:
                 output_name,
                 settings=settings,
                 include_timestamps=include_timestamps,
-                diarize=identify_speakers,
+                diarize=False,  # identify_speakers — UI desativada; ver README
                 on_progress=on_progress,
                 is_cancelled=is_cancelled,
             )
@@ -100,7 +100,7 @@ class TranscriptionController:
         use_input_folder: bool,
         settings: TranscriptionSettings,
         include_timestamps: bool,
-        identify_speakers: bool = False,
+        # identify_speakers: bool = False,
         *,
         on_progress: Callable[[float, str | None], None],
         is_cancelled: Callable[[], bool],
@@ -126,15 +126,10 @@ class TranscriptionController:
                 label=file_label,
             ) -> None:
                 overall = (idx + max(0.0, min(ratio, 1.0))) / total
-                if message and "%" in message:
-                    detail = message
-                elif ratio >= 0:
-                    detail = f"{int(ratio * 100)}%"
-                else:
-                    detail = message or "…"
+                pct = int(max(0.0, min(ratio, 1.0)) * 100)
                 on_progress(
                     overall,
-                    f"Arquivo {idx + 1}/{total}: {label} — {detail}",
+                    f"Arquivo {idx + 1}/{total}: {label} — {pct}%",
                 )
 
             try:
@@ -147,7 +142,7 @@ class TranscriptionController:
                     output_name=None,
                     settings=settings,
                     include_timestamps=include_timestamps,
-                    diarize=identify_speakers,
+                    diarize=False,  # identify_speakers — UI desativada; ver README
                     on_progress=file_progress,
                     is_cancelled=is_cancelled,
                 )

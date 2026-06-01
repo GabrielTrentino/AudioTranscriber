@@ -1,6 +1,7 @@
 import queue
 import sys
 import threading
+import time
 import traceback
 import tkinter as tk
 from datetime import datetime
@@ -30,7 +31,7 @@ class TranscriberApp(tk.Tk):
         self.output_dir = tk.StringVar()
         self.output_name = tk.StringVar()
         self.include_timestamps = tk.BooleanVar(value=True)
-        self.identify_speakers = tk.BooleanVar(value=False)
+        # self.identify_speakers = tk.BooleanVar(value=False)  # UI desativada — ver README
         self.quality_preset = tk.StringVar()
         self.model_size = tk.StringVar(value="base")
         self.memory_profile = tk.StringVar(value="balanced")
@@ -45,7 +46,13 @@ class TranscriberApp(tk.Tk):
         self._progress_queue: queue.SimpleQueue = queue.SimpleQueue()
         self._cancel_event = threading.Event()
         self._job_id = 0
-        self._heartbeat_stop = threading.Event()
+        self._progress_started_at: float | None = None
+        self._progress_timer_after: str | None = None
+        self._progress_ratio: float = 0.0
+        self._progress_raw_message: str | None = None
+        self._progress_model_label: str = "base"
+        self._last_shown_percent: int = -1
+        self._last_shown_elapsed: int = -1
         self._active_log_path: Path | None = None
 
         self._quality_labels = {label: key for label, key in QUALITY_CHOICES}
@@ -246,18 +253,88 @@ class TranscriberApp(tk.Tk):
         self.progress_text.set("")
         self._refresh_progress_ui()
 
+    def _progress_elapsed(self) -> int:
+        if self._progress_started_at is None:
+            return 0
+        return int(time.monotonic() - self._progress_started_at)
+
+    def _progress_wait_suffix(self) -> str:
+        return f" (aguarde, {self._progress_elapsed()}s)"
+
+    def _classify_progress(self, ratio: float, message: str | None) -> str:
+        """Fase estável para o rótulo (ignora detalhes voláteis do worker)."""
+        if message:
+            lower = message.lower()
+            if message in ("loading", "transcribing", "diarizing", "saving"):
+                return message
+            if "arquivo " in message and "/" in message:
+                return "batch"
+            if "diariz" in lower:
+                return "diarizing"
+            if "salvando" in lower:
+                return "saving"
+            if "preparando" in lower:
+                return "preparing"
+            if "carregando" in lower or "modelo" in lower:
+                return "loading"
+        if ratio < 0:
+            return "indeterminate"
+        if ratio <= 0 and (not message or message == "loading"):
+            return "loading"
+        return "transcribing"
+
+    def _progress_display_text(self, kind: str, percent: int, message: str | None) -> str:
+        suffix = self._progress_wait_suffix()
+        if kind == "batch" and message:
+            base = message.strip()
+            if "%" not in base and percent > 0:
+                base = f"{base} — {percent}%"
+            return base + suffix
+        labels = {
+            "preparing": f"Preparando arquivo… {percent}%",
+            "loading": (
+                f"Carregando modelo {self._progress_model_label} e transcrevendo"
+            ),
+            "transcribing": f"Transcrevendo… {percent}%",
+            "diarizing": f"Diarizando falantes… {percent}%",
+            "saving": f"Salvando arquivo… {percent}%",
+            "indeterminate": message or "Processando…",
+        }
+        base = labels.get(kind, f"Transcrevendo… {percent}%")
+        if kind == "indeterminate" and "(aguarde," in base:
+            return base
+        return base + suffix
+
     def _apply_progress(self, ratio: float, message: str | None) -> None:
         """Atualiza barra e texto de progresso na thread principal."""
-        if ratio < 0:
-            msg = message or "Processando…"
-            self._show_progress_indeterminate(msg)
+        if ratio >= 0:
+            self._progress_ratio = max(0.0, min(ratio, 1.0))
+        if message is not None:
+            self._progress_raw_message = message
+
+        kind = self._classify_progress(self._progress_ratio, message)
+        percent = int(self._progress_ratio * 100)
+        elapsed = self._progress_elapsed()
+        display = self._progress_display_text(kind, percent, message)
+
+        if kind in ("loading", "indeterminate") and percent == 0 and self._progress_ratio == 0:
+            if (
+                elapsed == self._last_shown_elapsed
+                and display == self.progress_text.get()
+            ):
+                return
+            self._last_shown_elapsed = elapsed
+            self._show_progress_indeterminate(display)
             return
 
-        percent = int(max(0.0, min(ratio, 1.0)) * 100)
-        if message:
-            display = message
-        else:
-            display = f"Transcrevendo… {percent}%"
+        if (
+            percent == self._last_shown_percent
+            and elapsed == self._last_shown_elapsed
+            and display == self.progress_text.get()
+        ):
+            return
+        self._last_shown_percent = percent
+        self._last_shown_elapsed = elapsed
         self._show_progress_percent(percent, display)
 
     def _flush_progress_queue(self) -> None:
@@ -299,28 +376,30 @@ class TranscriberApp(tk.Tk):
         self._drain_progress_queue()
         self.after(50, self._poll_ui_queue)
 
-    def _start_heartbeat(self, base_message: str) -> None:
-        self._heartbeat_stop.clear()
-        job_id = self._job_id
+    def _start_progress_timer(self, model_size: str = "base") -> None:
+        self._stop_progress_timer()
+        self._progress_model_label = model_size
+        self._progress_started_at = time.monotonic()
+        self._progress_ratio = 0.0
+        self._progress_raw_message = None
+        self._last_shown_percent = -1
+        self._last_shown_elapsed = -1
+        self._schedule_progress_timer_tick()
 
-        def tick() -> None:
-            elapsed = 0
-            while not self._heartbeat_stop.wait(2.0):
-                if job_id != self._job_id:
-                    return
-                elapsed += 2
-                self._progress_queue.put(
-                    (
-                        job_id,
-                        0.0,
-                        f"{base_message} (aguarde, {elapsed}s)",
-                    )
-                )
+    def _schedule_progress_timer_tick(self) -> None:
+        if self._progress_started_at is None:
+            return
+        self._apply_progress(self._progress_ratio, self._progress_raw_message)
+        self._progress_timer_after = self.after(1000, self._schedule_progress_timer_tick)
 
-        threading.Thread(target=tick, daemon=True).start()
-
-    def _stop_heartbeat(self) -> None:
-        self._heartbeat_stop.set()
+    def _stop_progress_timer(self) -> None:
+        if self._progress_timer_after is not None:
+            try:
+                self.after_cancel(self._progress_timer_after)
+            except tk.TclError:
+                pass
+            self._progress_timer_after = None
+        self._progress_started_at = None
 
     def _is_cancelled(self) -> bool:
         return self._cancel_event.is_set()
@@ -331,28 +410,28 @@ class TranscriberApp(tk.Tk):
             self.cancel_btn.configure(state=tk.DISABLED)
             self._apply_progress(0.0, "Cancelando…")
 
-    def _speaker_id_ready(self) -> bool:
-        if not self.identify_speakers.get():
-            return True
-        from audiotranscriber.services.diarization_backend import (
-            diarization_install_hint,
-            is_diarization_available,
-        )
-
-        if is_diarization_available():
-            return True
-        messagebox.showwarning(
-            "Identificar falantes",
-            "Recurso experimental indisponível.\n\n"
-            f"{diarization_install_hint()}\n\n"
-            "Desmarque a opção ou instale as dependências e tente de novo.",
-        )
-        return False
+    # def _speaker_id_ready(self) -> bool:
+    #     if not self.identify_speakers.get():
+    #         return True
+    #     from audiotranscriber.services.diarization_backend import (
+    #         diarization_install_hint,
+    #         is_diarization_available,
+    #     )
+    #
+    #     if is_diarization_available():
+    #         return True
+    #     messagebox.showwarning(
+    #         "Identificar falantes",
+    #         "Recurso experimental indisponível.\n\n"
+    #         f"{diarization_install_hint()}\n\n"
+    #         "Desmarque a opção ou instale as dependências e tente de novo.",
+    #     )
+    #     return False
 
     def _begin_transcription_job(self) -> None:
         self._job_id += 1
         self._cancel_event.clear()
-        self._stop_heartbeat()
+        self._stop_progress_timer()
         self._flush_progress_queue()
         self._log(f"job {self._job_id}: validação OK, preparando UI")
         self._set_busy(True)
@@ -367,7 +446,7 @@ class TranscriberApp(tk.Tk):
             getattr(self, "output_name_entry", None),
             getattr(self, "batch_output_entry", None),
             self.batch_listbox,
-            getattr(self, "identify_speakers_btn", None),
+            # getattr(self, "identify_speakers_btn", None),
         ):
             if widget is not None:
                 widget.configure(state=state)
@@ -384,7 +463,7 @@ class TranscriberApp(tk.Tk):
                 combo.configure(state="disabled")
             self._language_combo.configure(state="disabled")
         else:
-            self._stop_heartbeat()
+            self._stop_progress_timer()
             self.progress_bar.stop()
             self.progress_bar.configure(mode="determinate")
             self.quality_combo.configure(state="readonly")
@@ -432,19 +511,18 @@ class TranscriberApp(tk.Tk):
             self._log(f"Entrada: {input_path}")
             self._log(f"Saída: {output_path} (pasta do arquivo de entrada)")
 
-        if not self._speaker_id_ready():
-            return
+        # if not self._speaker_id_ready():
+        #     return
 
         try:
             settings = self._build_settings()
-            identify = self.identify_speakers.get()
+            # identify = self.identify_speakers.get()
             self._log(
                 f"Config: preset={settings.quality_preset}, "
-                f"modelo={settings.model_size}, idioma={settings.language}, "
-                f"falantes={identify}"
+                f"modelo={settings.model_size}, idioma={settings.language}"
             )
             self._begin_transcription_job()
-            self._apply_progress(0.0, "Iniciando transcrição… 0%")
+            self._apply_progress(0.0, "preparing")
 
             thread = threading.Thread(
                 target=self._run_single_transcription,
@@ -454,7 +532,7 @@ class TranscriberApp(tk.Tk):
                     output_name,
                     settings,
                     self.include_timestamps.get(),
-                    identify,
+                    # identify_speakers=identify,
                 ),
                 daemon=True,
             )
@@ -510,14 +588,16 @@ class TranscriberApp(tk.Tk):
                 f"Lote: {len(paths)} arquivo(s) -> pasta de cada arquivo de entrada"
             )
 
-        if not self._speaker_id_ready():
-            return
+        # if not self._speaker_id_ready():
+        #     return
 
         settings = self._build_settings()
-        identify = self.identify_speakers.get()
-        self._log(f"Config lote: falantes={identify}")
+        # identify = self.identify_speakers.get()
+        # self._log(f"Config lote: falantes={identify}")
         self._begin_transcription_job()
-        self._apply_progress(0.0, f"Preparando lote… 0% ({len(paths)} arquivo(s))")
+        self._apply_progress(
+            0.0, f"Arquivo 0/{len(paths)} — preparando lote… 0%"
+        )
 
         thread = threading.Thread(
             target=self._run_batch_transcription,
@@ -527,7 +607,7 @@ class TranscriberApp(tk.Tk):
                 use_input_folder,
                 settings,
                 self.include_timestamps.get(),
-                identify,
+                # identify_speakers=identify,
             ),
             daemon=True,
         )
@@ -540,11 +620,9 @@ class TranscriberApp(tk.Tk):
         output_name: str | None,
         settings: TranscriptionSettings,
         include_timestamps: bool,
-        identify_speakers: bool,
+        # identify_speakers: bool,
     ) -> None:
-        self._start_heartbeat(
-            f"Carregando modelo {settings.model_size} e transcrevendo"
-        )
+        self._start_progress_timer(settings.model_size)
 
         def log_line(message: str) -> None:
             self._log(f"job {self._job_id}: {message}")
@@ -556,7 +634,7 @@ class TranscriberApp(tk.Tk):
                 output_name,
                 settings,
                 include_timestamps,
-                identify_speakers,
+                # identify_speakers=identify_speakers,
                 on_progress=self._report_progress,
                 is_cancelled=self._is_cancelled,
                 log=log_line,
@@ -568,7 +646,7 @@ class TranscriberApp(tk.Tk):
             detail = f"{exc}\n\n{traceback.format_exc()}"
             self._schedule_on_main(self._on_error, detail)
         finally:
-            self._stop_heartbeat()
+            self._stop_progress_timer()
 
     def _run_batch_transcription(
         self,
@@ -577,9 +655,9 @@ class TranscriberApp(tk.Tk):
         use_input_folder: bool,
         settings: TranscriptionSettings,
         include_timestamps: bool,
-        identify_speakers: bool,
+        # identify_speakers: bool,
     ) -> None:
-        self._start_heartbeat("Processando lote")
+        self._start_progress_timer(settings.model_size)
 
         def log_line(message: str) -> None:
             self._log(f"job {self._job_id}: {message}")
@@ -591,7 +669,7 @@ class TranscriberApp(tk.Tk):
                 use_input_folder,
                 settings,
                 include_timestamps,
-                identify_speakers,
+                # identify_speakers=identify_speakers,
                 on_progress=self._report_progress,
                 is_cancelled=self._is_cancelled,
                 log=log_line,
@@ -614,7 +692,7 @@ class TranscriberApp(tk.Tk):
             self._log(f"job {self._job_id}: batch error\n{detail}")
             self._schedule_on_main(self._on_error, detail)
         finally:
-            self._stop_heartbeat()
+            self._stop_progress_timer()
 
     def _on_single_success(self, output_file: Path) -> None:
         self._set_busy(False)

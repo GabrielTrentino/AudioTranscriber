@@ -94,14 +94,14 @@ class TranscriptionService:
         _check_cancelled(is_cancelled)
 
         if on_progress:
-            on_progress(0.0, f"Carregando modelo {cfg.model_size}… 0%")
+            on_progress(0.0, "loading")
 
         model = self._models.get_model(cfg)
         _check_cancelled(is_cancelled)
         memory = resolve_memory_settings(cfg.memory_profile, beam_size=cfg.beam_size)
 
         if on_progress:
-            on_progress(0.0, "Transcrevendo… 0%")
+            on_progress(0.0, "transcribing")
 
         transcribe_kwargs: dict = {
             "language": _resolve_language(cfg.language),
@@ -116,21 +116,26 @@ class TranscriptionService:
         duration = getattr(info, "duration", None) or 0.0
 
         collected = []
+        last_reported_pct = -1
         for segment in segments:
             _check_cancelled(is_cancelled)
             collected.append(segment)
             if on_progress:
                 if duration > 0:
                     ratio = min(segment.end / duration, 0.99)
-                    on_progress(ratio, f"Transcrevendo… {int(ratio * 100)}%")
-                else:
-                    on_progress(0.0, "Transcrevendo…")
+                    pct = int(ratio * 100)
+                    if pct != last_reported_pct:
+                        last_reported_pct = pct
+                        on_progress(ratio, None)
+                elif last_reported_pct < 0:
+                    last_reported_pct = 0
+                    on_progress(0.0, None)
 
         if diarize:
             if not is_diarization_available():
                 raise RuntimeError(diarization_install_hint())
             if on_progress:
-                on_progress(0.99, "Diarizando falantes…")
+                on_progress(0.99, "diarizing")
             lang = _resolve_language(cfg.language)
             labeled = assign_speaker_labels(
                 Path(path),
@@ -146,11 +151,10 @@ class TranscriptionService:
             return format_labeled_segments(
                 labeled,
                 include_timestamps=with_timestamps,
-                pause_gap=cfg.pause_gap_seconds,
             )
 
         if on_progress:
-            on_progress(1.0, "Salvando arquivo… 100%")
+            on_progress(1.0, "saving")
 
         if fmt in ("srt", "vtt", "json"):
             return format_export(collected, fmt)

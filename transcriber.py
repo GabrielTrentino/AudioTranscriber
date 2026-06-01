@@ -39,6 +39,15 @@ _model: WhisperModel | None = None
 _model_cache_key: tuple | None = None
 
 
+class TranscriptionCancelled(Exception):
+    """Transcrição interrompida pelo usuário."""
+
+
+def _check_cancelled(is_cancelled: Callable[[], bool] | None) -> None:
+    if is_cancelled and is_cancelled():
+        raise TranscriptionCancelled("Transcrição cancelada pelo usuário.")
+
+
 def _optional_int_env(name: str) -> int | None:
     value = os.getenv(name)
     if value is None or not value.strip():
@@ -208,6 +217,7 @@ def transcribe_path(
     settings: TranscriptionSettings | None = None,
     include_timestamps: bool | None = None,
     on_progress: Callable[[float, str | None], None] | None = None,
+    is_cancelled: Callable[[], bool] | None = None,
 ) -> str:
     cfg = settings or TranscriptionSettings.from_env()
 
@@ -217,14 +227,17 @@ def transcribe_path(
     elif include_timestamps is False:
         output_format = "line"
 
+    _check_cancelled(is_cancelled)
+
     if on_progress:
-        on_progress(-1.0, f"Carregando modelo {cfg.model_size}…")
+        on_progress(0.0, f"Carregando modelo {cfg.model_size}… 0%")
 
     model = get_model(cfg)
+    _check_cancelled(is_cancelled)
     memory = resolve_memory_settings(cfg.memory_profile, beam_size=cfg.beam_size)
 
     if on_progress:
-        on_progress(-1.0, "Transcrevendo…")
+        on_progress(0.0, "Transcrevendo… 0%")
 
     transcribe_kwargs: dict = {
         "language": _resolve_language(cfg.language),
@@ -240,16 +253,17 @@ def transcribe_path(
 
     collected = []
     for segment in segments:
+        _check_cancelled(is_cancelled)
         collected.append(segment)
         if on_progress:
             if duration > 0:
                 ratio = min(segment.end / duration, 0.99)
                 on_progress(ratio, f"Transcrevendo… {int(ratio * 100)}%")
             else:
-                on_progress(-1.0, "Transcrevendo…")
+                on_progress(0.0, "Transcrevendo…")
 
     if on_progress:
-        on_progress(1.0, "Salvando arquivo…")
+        on_progress(1.0, "Salvando arquivo… 100%")
 
     return format_segments(collected, output_format)
 
@@ -287,11 +301,13 @@ def transcribe_to_file(
     settings: TranscriptionSettings | None = None,
     include_timestamps: bool = False,
     on_progress: Callable[[float, str | None], None] | None = None,
+    is_cancelled: Callable[[], bool] | None = None,
 ) -> Path:
     text = transcribe_path(
         input_path,
         settings=settings,
         include_timestamps=include_timestamps,
         on_progress=on_progress,
+        is_cancelled=is_cancelled,
     )
     return save_transcription(input_path, output_dir, text, output_name)

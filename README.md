@@ -17,6 +17,16 @@ pip install -r requirements.txt
 
 ## Executar
 
+### Interface gráfica (recomendado)
+
+Usa **tkinter** (biblioteca padrão do Python). Escolha o arquivo de entrada, a pasta de saída e clique em **Transcrever**. O texto é salvo como `{nome-do-arquivo}.txt` na pasta escolhida.
+
+```bash
+python gui.py
+```
+
+### API HTTP
+
 ```bash
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```

@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "audiotranscriber"
+version = "0.2.0"
+description = "Transcrição de áudio e vídeo com faster-whisper"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "faster-whisper",
+    "fastapi",
+    "uvicorn[standard]",
+    "python-multipart",
+]
+
+[project.optional-dependencies]
+build = ["pyinstaller>=6.0"]
+
+[project.scripts]
+audiotranscriber-gui = "audiotranscriber.gui.app:main"
+audiotranscriber-api = "audiotranscriber.api.app:run"
+
+[tool.setuptools.packages.find]
+where = ["src"]

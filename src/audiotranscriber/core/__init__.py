@@ -1,0 +1,1 @@
+"""Núcleo: settings, modelo, formatação."""

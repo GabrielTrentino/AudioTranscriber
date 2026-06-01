@@ -6,7 +6,7 @@ from pathlib import Path
 from audiotranscriber.core.exceptions import TranscriptionCancelled
 from audiotranscriber.core.exporters import format_export
 from audiotranscriber.core.formatter import format_segments
-from audiotranscriber.services.diarization import format_segments_with_speakers
+from audiotranscriber.core.formatter import format_labeled_segments
 from audiotranscriber.services.diarization_backend import (
     assign_speaker_labels,
     diarization_install_hint,
@@ -142,7 +142,12 @@ class TranscriptionService:
                 import json
 
                 return json.dumps(labeled, ensure_ascii=False, indent=2)
-            return format_segments_with_speakers(labeled)
+            with_timestamps = include_timestamps is True
+            return format_labeled_segments(
+                labeled,
+                include_timestamps=with_timestamps,
+                pause_gap=cfg.pause_gap_seconds,
+            )
 
         if on_progress:
             on_progress(1.0, "Salvando arquivo… 100%")

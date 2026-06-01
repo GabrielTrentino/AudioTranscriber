@@ -69,10 +69,16 @@ def assign_speakers(
     return result
 
 
-def format_segments_with_speakers(segments: list[dict[str, Any]]) -> str:
-    lines: list[str] = []
-    for item in segments:
-        speaker = item.get("speaker", "SPEAKER")
-        text = item["text"]
-        lines.append(f"[{speaker}] {text}")
-    return "\n".join(lines)
+def format_segments_with_speakers(
+    segments: list[dict[str, Any]],
+    *,
+    include_timestamps: bool = False,
+    pause_gap: float | None = None,
+) -> str:
+    from audiotranscriber.core.formatter import format_labeled_segments
+
+    return format_labeled_segments(
+        segments,
+        include_timestamps=include_timestamps,
+        pause_gap=pause_gap,
+    )

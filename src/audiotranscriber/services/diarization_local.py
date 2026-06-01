@@ -12,7 +12,9 @@ from typing import Any
 import numpy as np
 
 _MIN_SEGMENT_SEC = 0.35
-_CLUSTER_DISTANCE = 9.0
+# Distância de cosseno (0=idêntico, 1=ortogonal): maior = menos clusters
+_CLUSTER_DISTANCE = 0.55
+_SMOOTH_SIMILARITY = 0.82
 
 
 def is_local_diarization_available() -> bool:
@@ -47,7 +49,48 @@ def _segment_embedding(
         return None
     clip = samples[i0:i1]
     mfcc = librosa.feature.mfcc(y=clip, sr=sr, n_mfcc=20)
-    return mfcc.mean(axis=1)
+    delta = librosa.feature.delta(mfcc)
+    combined = np.concatenate([mfcc.mean(axis=1), delta.mean(axis=1)])
+    norm = np.linalg.norm(combined)
+    if norm < 1e-8:
+        return None
+    return combined / norm
+
+
+def _cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
+    return float(np.dot(a, b))
+
+
+def _smooth_labels_in_order(
+    cluster_ids: np.ndarray, embeddings: list[np.ndarray]
+) -> np.ndarray:
+    """Evita trocar de falante entre trechos consecutivos da mesma voz."""
+    smoothed = cluster_ids.copy()
+    for i in range(1, len(smoothed)):
+        if _cosine_similarity(embeddings[i], embeddings[i - 1]) >= _SMOOTH_SIMILARITY:
+            smoothed[i] = smoothed[i - 1]
+    return smoothed
+
+
+def _merge_similar_clusters(cluster_ids: np.ndarray, matrix: np.ndarray) -> np.ndarray:
+    """Une clusters com centroides muito parecidos (mesma pessoa)."""
+    unique = [int(c) for c in np.unique(cluster_ids)]
+    if len(unique) <= 1:
+        return cluster_ids
+
+    centroids: dict[int, np.ndarray] = {}
+    for cid in unique:
+        mean = matrix[cluster_ids == cid].mean(axis=0)
+        norm = np.linalg.norm(mean)
+        centroids[cid] = mean / norm if norm > 1e-8 else mean
+
+    remap = {cid: cid for cid in unique}
+    for i, a in enumerate(unique):
+        for b in unique[i + 1 :]:
+            if _cosine_similarity(centroids[a], centroids[b]) >= _SMOOTH_SIMILARITY:
+                remap[b] = remap[a]
+
+    return np.array([remap[int(c)] for c in cluster_ids])
 
 
 def assign_speakers(
@@ -68,8 +111,7 @@ def assign_speakers(
     indices: list[int] = []
 
     for index, segment in enumerate(segments):
-        text = segment.text.strip()
-        if not text:
+        if not segment.text.strip():
             continue
         emb = _segment_embedding(samples, sr, float(segment.start), float(segment.end))
         if emb is None:
@@ -86,10 +128,14 @@ def assign_speakers(
             model = AgglomerativeClustering(
                 n_clusters=None,
                 distance_threshold=_CLUSTER_DISTANCE,
-                metric="euclidean",
+                metric="cosine",
                 linkage="average",
             )
             cluster_ids = model.fit_predict(matrix)
+            emb_list = [rows[i] for i in range(len(rows))]
+            cluster_ids = _smooth_labels_in_order(cluster_ids, emb_list)
+            cluster_ids = _merge_similar_clusters(cluster_ids, matrix)
+
         for seg_index, cluster_id in zip(indices, cluster_ids):
             labels[seg_index] = f"SPEAKER_{int(cluster_id):02d}"
 

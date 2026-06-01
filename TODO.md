@@ -19,7 +19,7 @@ Prioridade: **P0** crítico → **P2** desejável.
 - [ ] API alinhada à GUI: `memory_profile`, `compute_type`, `beam_size`, lote
 - [ ] Validação na borda: FFmpeg, extensão, tamanho máximo, pasta gravável
 - [ ] Contrato de progresso tipado (`ProgressEvent`) em vez de `ratio=-1` mágico
-- [ ] Cancelamento de transcrição (GUI + flag no serviço)
+- [x] Cancelamento de transcrição (GUI + flag no serviço)
 - [ ] Logging estruturado (`logging` + arquivo opcional)
 - [ ] Erros de domínio (`FfmpegNotFoundError`, `ModelLoadError`, etc.)
 - [ ] Limites na API: upload, timeout, fila configurável
@@ -61,5 +61,5 @@ Prioridade: **P0** crítico → **P2** desejável.
 
 ## Feito / em andamento
 
-- [x] Barra de progresso visível (modo indeterminado ao carregar modelo)
+- [x] Barra de progresso visível (fila thread-safe, 0% e status na thread principal)
 - [x] Presets travados; **Personalizado** desbloqueia modelo, memória, precisão e beam

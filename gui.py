@@ -1,3 +1,4 @@
+import queue
 import threading
 import tkinter as tk
 from pathlib import Path
@@ -8,6 +9,7 @@ from transcriber import (
     DEVICE,
     MEMORY_PROFILE_OPTIONS,
     MODEL_OPTIONS,
+    TranscriptionCancelled,
     TranscriptionSettings,
     transcribe_to_file,
 )
@@ -48,6 +50,11 @@ class TranscriberApp(tk.Tk):
         self.status = tk.StringVar(value=f"Dispositivo: {DEVICE}")
 
         self._batch_paths: list[str] = []
+        self._progress_queue: queue.SimpleQueue[tuple[float, str | None]] = (
+            queue.SimpleQueue()
+        )
+        self._progress_pump_id: str | None = None
+        self._cancel_event = threading.Event()
 
         self._quality_labels = {label: key for label, key in QUALITY_CHOICES}
         self._quality_keys = {key: label for label, key in QUALITY_CHOICES}
@@ -75,6 +82,16 @@ class TranscriberApp(tk.Tk):
 
         self._build_single_tab(single_tab, padding)
         self._build_batch_tab(batch_tab, padding)
+
+        progress_frame = ttk.LabelFrame(frame, text="Progresso", padding=8)
+        progress_frame.pack(fill=tk.X, pady=(0, 8))
+
+        self.progress_bar = ttk.Progressbar(
+            progress_frame, mode="determinate", maximum=100, length=460
+        )
+        self.progress_bar.pack(fill=tk.X, pady=(0, 6))
+
+        ttk.Label(progress_frame, textvariable=self.progress_text).pack(anchor="w")
 
         cfg_frame = ttk.LabelFrame(frame, text="Qualidade da transcrição", padding=8)
         cfg_frame.pack(fill=tk.X, pady=(0, 8))
@@ -166,21 +183,25 @@ class TranscriberApp(tk.Tk):
             variable=self.include_timestamps,
         ).pack(anchor="w", pady=(0, 8))
 
+        actions_frame = ttk.Frame(frame)
+        actions_frame.pack(fill=tk.X, pady=(0, 8))
+
         self.transcribe_btn = ttk.Button(
-            frame, text="Transcrever", command=self._start_transcription
+            actions_frame, text="Transcrever", command=self._start_transcription
         )
-        self.transcribe_btn.pack(pady=(0, 8))
+        self.transcribe_btn.pack(side=tk.LEFT)
 
-        progress_frame = ttk.LabelFrame(frame, text="Progresso", padding=8)
-        progress_frame.pack(fill=tk.X, pady=(0, 8))
-
-        self.progress_bar = ttk.Progressbar(
-            progress_frame, mode="determinate", maximum=100, length=460
+        self.cancel_btn = ttk.Button(
+            actions_frame,
+            text="Cancelar",
+            command=self._cancel_transcription,
+            state=tk.DISABLED,
         )
-        self.progress_bar.pack(fill=tk.X, pady=(0, 6))
+        self.cancel_btn.pack(side=tk.LEFT, padx=(8, 0))
 
-        ttk.Label(progress_frame, textvariable=self.progress_text).pack(anchor="w")
-        ttk.Label(frame, textvariable=self.status, wraplength=500).pack(anchor="w")
+        ttk.Label(frame, textvariable=self.status, wraplength=500).pack(
+            anchor="w", pady=(0, 4)
+        )
 
     def _build_single_tab(self, parent: ttk.Frame, padding: dict) -> None:
         ttk.Label(parent, text="Entrada:").grid(row=0, column=0, sticky="w")
@@ -362,14 +383,11 @@ class TranscriberApp(tk.Tk):
         self.progress_text.set(message)
         self._refresh_progress_ui()
 
-    def _show_progress_percent(self, percent: int, message: str | None) -> None:
+    def _show_progress_percent(self, percent: int, message: str) -> None:
         self.progress_bar.stop()
         self.progress_bar.configure(mode="determinate")
         self.progress_bar["value"] = percent
-        if message:
-            self.progress_text.set(message)
-        else:
-            self.progress_text.set(f"Transcrevendo… {percent}%")
+        self.progress_text.set(message)
         self._refresh_progress_ui()
 
     def _reset_progress(self) -> None:
@@ -379,20 +397,81 @@ class TranscriberApp(tk.Tk):
         self.progress_text.set("")
         self._refresh_progress_ui()
 
+    def _apply_progress(self, ratio: float, message: str | None) -> None:
+        """Atualiza barra e status na thread principal."""
+        if ratio < 0:
+            msg = message or "Processando…"
+            self.status.set(msg)
+            self._show_progress_indeterminate(msg)
+            return
+
+        percent = int(max(0.0, min(ratio, 1.0)) * 100)
+        if message:
+            display = message
+        else:
+            display = f"Transcrevendo… {percent}%"
+        self.status.set(display)
+        self._show_progress_percent(percent, display)
+
+    def _schedule_on_main(self, callback, *args) -> None:
+        """Agenda callback na thread principal (seguro a partir de worker)."""
+        self._progress_queue.put(("__callback__", callback, args))
+
     def _report_progress(self, ratio: float, message: str | None) -> None:
-        def update() -> None:
-            if ratio < 0:
-                self._show_progress_indeterminate(message or "Processando…")
-                return
+        """Pode ser chamado da thread de trabalho; enfileira para a UI."""
+        self._progress_queue.put((ratio, message))
 
-            percent = int(max(0.0, min(ratio, 1.0)) * 100)
-            self._show_progress_percent(percent, message)
+    def _pump_progress_queue(self) -> None:
+        while True:
+            try:
+                item = self._progress_queue.get_nowait()
+            except queue.Empty:
+                break
+            if item[0] == "__callback__":
+                _, callback, args = item
+                callback(*args)
+            else:
+                ratio, message = item
+                self._apply_progress(ratio, message)
+        self._progress_pump_id = self.after(50, self._pump_progress_queue)
 
-        self.after(0, update)
+    def _start_progress_pump(self) -> None:
+        self._stop_progress_pump(drain=False)
+        self._progress_pump_id = self.after(50, self._pump_progress_queue)
+
+    def _stop_progress_pump(self, *, drain: bool = True) -> None:
+        if self._progress_pump_id is not None:
+            self.after_cancel(self._progress_pump_id)
+            self._progress_pump_id = None
+        if drain:
+            while True:
+                try:
+                    item = self._progress_queue.get_nowait()
+                except queue.Empty:
+                    break
+                if item[0] == "__callback__":
+                    _, callback, args = item
+                    callback(*args)
+
+    def _is_cancelled(self) -> bool:
+        return self._cancel_event.is_set()
+
+    def _cancel_transcription(self) -> None:
+        if not self._cancel_event.is_set():
+            self._cancel_event.set()
+            self.cancel_btn.configure(state=tk.DISABLED)
+            self._apply_progress(0.0, "Cancelando…")
+
+    def _begin_transcription_job(self) -> None:
+        self._cancel_event.clear()
+        self._set_busy(True)
+        self._start_progress_pump()
+        self.cancel_btn.configure(state=tk.NORMAL)
 
     def _set_busy(self, busy: bool) -> None:
         state = tk.DISABLED if busy else tk.NORMAL
         self.transcribe_btn.configure(state=state)
+        self.cancel_btn.configure(state=tk.NORMAL if busy else tk.DISABLED)
         self.quality_combo.configure(state="disabled" if busy else "readonly")
         self.files_notebook.configure(state="disabled" if busy else "normal")
         if busy:
@@ -401,6 +480,7 @@ class TranscriberApp(tk.Tk):
                 combo.configure(state="disabled")
             self._language_combo.configure(state="disabled")
         else:
+            self._stop_progress_pump()
             self.progress_bar.stop()
             self.progress_bar.configure(mode="determinate")
             self.quality_combo.configure(state="readonly")
@@ -431,9 +511,8 @@ class TranscriberApp(tk.Tk):
             return
 
         settings = self._build_settings()
-        self._set_busy(True)
-        self._update_config_status(settings)
-        self._show_progress_indeterminate("Preparando…")
+        self._begin_transcription_job()
+        self._apply_progress(0.0, "Iniciando transcrição… 0%")
 
         thread = threading.Thread(
             target=self._run_single_transcription,
@@ -468,9 +547,8 @@ class TranscriberApp(tk.Tk):
             return
 
         settings = self._build_settings()
-        self._set_busy(True)
-        self._update_config_status(settings)
-        self._show_progress_indeterminate("Preparando lote…")
+        self._begin_transcription_job()
+        self._apply_progress(0.0, f"Preparando lote… 0% ({len(paths)} arquivo(s))")
 
         thread = threading.Thread(
             target=self._run_batch_transcription,
@@ -500,10 +578,13 @@ class TranscriberApp(tk.Tk):
                 settings=settings,
                 include_timestamps=include_timestamps,
                 on_progress=self._report_progress,
+                is_cancelled=self._is_cancelled,
             )
-            self.after(0, lambda: self._on_single_success(output_file))
+            self._schedule_on_main(self._on_single_success, output_file)
+        except TranscriptionCancelled:
+            self._schedule_on_main(self._on_cancelled)
         except Exception as exc:
-            self.after(0, lambda: self._on_error(str(exc)))
+            self._schedule_on_main(self._on_error, str(exc))
 
     def _run_batch_transcription(
         self,
@@ -516,8 +597,13 @@ class TranscriberApp(tk.Tk):
         saved: list[Path] = []
         errors: list[str] = []
 
+        cancelled = False
         try:
             for index, input_path in enumerate(paths):
+                if self._is_cancelled():
+                    cancelled = True
+                    break
+
                 file_label = input_path.name
 
                 def file_progress(
@@ -547,22 +633,31 @@ class TranscriberApp(tk.Tk):
                         settings=settings,
                         include_timestamps=include_timestamps,
                         on_progress=file_progress,
+                        is_cancelled=self._is_cancelled,
                     )
                     saved.append(output_file)
+                except TranscriptionCancelled:
+                    cancelled = True
+                    break
                 except Exception as exc:
                     errors.append(f"{file_label}: {exc}")
 
-            self.after(
-                0,
-                lambda: self._on_batch_finished(saved, errors, output_dir),
-            )
+            if cancelled:
+                self._schedule_on_main(
+                    self._on_batch_cancelled, saved, errors, output_dir
+                )
+            else:
+                self._schedule_on_main(
+                    self._on_batch_finished, saved, errors, output_dir
+                )
         except Exception as exc:
-            self.after(0, lambda: self._on_error(str(exc)))
+            self._schedule_on_main(self._on_error, str(exc))
 
     def _on_single_success(self, output_file: Path) -> None:
         self._set_busy(False)
-        self._show_progress_percent(100, "Concluído (100%)")
-        self.status.set(f"Arquivo salvo em: {output_file}")
+        done_msg = "Concluído (100%)"
+        self._show_progress_percent(100, done_msg)
+        self.status.set(f"{done_msg} — salvo em: {output_file}")
         messagebox.showinfo(
             "Transcrição concluída",
             f"Texto salvo em:\n{output_file}",
@@ -575,7 +670,7 @@ class TranscriberApp(tk.Tk):
         output_dir: Path,
     ) -> None:
         self._set_busy(False)
-        self._show_progress_percent(100, None)
+        self._show_progress_percent(100, "Concluído (100%)")
 
         ok_count = len(saved)
         err_count = len(errors)
@@ -598,6 +693,35 @@ class TranscriberApp(tk.Tk):
             "Lote finalizado com erros",
             f"Sucesso: {ok_count}\nFalhas: {err_count}\n\n{detail}",
         )
+
+    def _on_cancelled(self) -> None:
+        self._set_busy(False)
+        self.progress_bar["value"] = 0
+        self.progress_text.set("Cancelado")
+        self.status.set("Transcrição cancelada.")
+        messagebox.showinfo("Cancelado", "A transcrição foi cancelada.")
+
+    def _on_batch_cancelled(
+        self,
+        saved: list[Path],
+        errors: list[str],
+        output_dir: Path,
+    ) -> None:
+        self._set_busy(False)
+        self.progress_bar["value"] = 0
+        self.progress_text.set("Cancelado")
+        ok_count = len(saved)
+        if ok_count:
+            self.status.set(
+                f"Cancelado — {ok_count} arquivo(s) já salvo(s) em: {output_dir}"
+            )
+            messagebox.showinfo(
+                "Cancelado",
+                f"Lote interrompido.\n{ok_count} arquivo(s) já transcrito(s) em:\n{output_dir}",
+            )
+        else:
+            self.status.set("Lote cancelado.")
+            messagebox.showinfo("Cancelado", "O lote foi cancelado.")
 
     def _on_error(self, detail: str) -> None:
         self._set_busy(False)

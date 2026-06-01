@@ -19,7 +19,7 @@ pip install -r requirements.txt
 
 ### Interface gráfica (recomendado)
 
-Usa **tkinter** (biblioteca padrão do Python). Escolha o arquivo de entrada, a pasta de saída e clique em **Transcrever**. O texto é salvo como `{nome-do-arquivo}.txt` na pasta escolhida.
+Usa **tkinter** (biblioteca padrão do Python). Escolha o arquivo de entrada, a pasta de saída, o **nome do arquivo de saída** (opcional) e clique em **Transcrever**. Se o nome estiver vazio, usa o mesmo nome do áudio/vídeo com extensão `.txt`.
 
 ```bash
 python gui.py
@@ -53,6 +53,8 @@ Resposta:
 | `WHISPER_DEVICE` | `cpu` | `cpu`, `cuda` ou `auto` |
 | `WHISPER_COMPUTE_TYPE` | `int8` | `int8`, `float16`, `float32` (GPU costuma usar `float16`) |
 | `WHISPER_LANGUAGE` | `pt` | Código do idioma |
+| `WHISPER_OUTPUT_FORMAT` | `line` | `line` (uma linha por trecho), `time` (com timestamp), `none` (texto corrido) |
+| `WHISPER_PAUSE_GAP` | `1.5` | Segundos de pausa para inserir linha em branco entre parágrafos |
 
 Exemplo com GPU:
 

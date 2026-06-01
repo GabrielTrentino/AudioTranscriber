@@ -15,11 +15,12 @@ class TranscriberApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("AudioTranscriber")
-        self.minsize(520, 220)
+        self.minsize(520, 280)
         self.resizable(True, False)
 
         self.input_path = tk.StringVar()
         self.output_dir = tk.StringVar()
+        self.output_name = tk.StringVar()
         self.status = tk.StringVar(
             value=f"Modelo: {MODEL_SIZE} | Dispositivo: {DEVICE}"
         )
@@ -47,13 +48,25 @@ class TranscriberApp(tk.Tk):
             row=3, column=1, **padding
         )
 
+        ttk.Label(frame, text="Nome do arquivo de saída:").grid(
+            row=4, column=0, sticky="w"
+        )
+        ttk.Entry(frame, textvariable=self.output_name, width=50).grid(
+            row=5, column=0, sticky="ew", **padding
+        )
+        ttk.Label(
+            frame,
+            text="(opcional; vazio = mesmo nome do áudio/vídeo)",
+            font=("TkDefaultFont", 8),
+        ).grid(row=5, column=1, sticky="w", padx=12)
+
         self.transcribe_btn = ttk.Button(
             frame, text="Transcrever", command=self._start_transcription
         )
-        self.transcribe_btn.grid(row=4, column=0, columnspan=2, pady=(12, 4))
+        self.transcribe_btn.grid(row=6, column=0, columnspan=2, pady=(12, 4))
 
         ttk.Label(frame, textvariable=self.status, wraplength=480).grid(
-            row=5, column=0, columnspan=2, sticky="w"
+            row=7, column=0, columnspan=2, sticky="w"
         )
 
         frame.columnconfigure(0, weight=1)
@@ -65,6 +78,8 @@ class TranscriberApp(tk.Tk):
         )
         if path:
             self.input_path.set(path)
+            if not self.output_name.get().strip():
+                self.output_name.set(Path(path).stem)
 
     def _pick_output(self) -> None:
         path = filedialog.askdirectory(title="Selecionar pasta de saída")
@@ -78,6 +93,7 @@ class TranscriberApp(tk.Tk):
     def _start_transcription(self) -> None:
         input_file = self.input_path.get().strip()
         output_folder = self.output_dir.get().strip()
+        output_name = self.output_name.get().strip() or None
 
         if not input_file:
             messagebox.showwarning("Atenção", "Selecione um arquivo de entrada.")
@@ -96,14 +112,19 @@ class TranscriberApp(tk.Tk):
 
         thread = threading.Thread(
             target=self._run_transcription,
-            args=(input_path, Path(output_folder)),
+            args=(input_path, Path(output_folder), output_name),
             daemon=True,
         )
         thread.start()
 
-    def _run_transcription(self, input_path: Path, output_dir: Path) -> None:
+    def _run_transcription(
+        self,
+        input_path: Path,
+        output_dir: Path,
+        output_name: str | None,
+    ) -> None:
         try:
-            output_file = transcribe_to_file(input_path, output_dir)
+            output_file = transcribe_to_file(input_path, output_dir, output_name)
             self.after(
                 0,
                 lambda: self._on_success(output_file),

@@ -193,7 +193,7 @@ def build_parser() -> argparse.ArgumentParser:
     common.add_argument(
         "--diarize",
         action="store_true",
-        help="Atribuir falantes (requer pip install audiotranscriber[diarization])",
+        help="Identificar falantes com pyannote (pip install audiotranscriber[diarization], HF_TOKEN)",
     )
     common.add_argument("-q", "--quiet", action="store_true", help="Sem progresso no stderr")
 

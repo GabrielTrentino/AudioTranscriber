@@ -1,8 +1,9 @@
-import os
 import queue
+import sys
 import threading
 import traceback
 import tkinter as tk
+from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
@@ -56,6 +57,7 @@ class TranscriberApp(tk.Tk):
         self._cancel_event = threading.Event()
         self._job_id = 0
         self._heartbeat_stop = threading.Event()
+        self._active_log_path: Path | None = None
 
         self._quality_labels = {label: key for label, key in QUALITY_CHOICES}
         self._quality_keys = {key: label for label, key in QUALITY_CHOICES}
@@ -207,25 +209,24 @@ class TranscriberApp(tk.Tk):
 
     def _build_single_tab(self, parent: ttk.Frame, padding: dict) -> None:
         ttk.Label(parent, text="Entrada:").grid(row=0, column=0, sticky="w")
-        ttk.Entry(parent, textvariable=self.input_path, width=48).grid(
-            row=1, column=0, sticky="ew", **padding
-        )
+        self.input_entry = ttk.Entry(parent, textvariable=self.input_path, width=48)
+        self.input_entry.grid(row=1, column=0, sticky="ew", **padding)
         ttk.Button(parent, text="Escolher…", command=self._pick_input).grid(
             row=1, column=1, **padding
         )
 
         ttk.Label(parent, text="Pasta de saída:").grid(row=2, column=0, sticky="w")
-        ttk.Entry(parent, textvariable=self.output_dir, width=48).grid(
-            row=3, column=0, sticky="ew", **padding
-        )
+        self.output_entry = ttk.Entry(parent, textvariable=self.output_dir, width=48)
+        self.output_entry.grid(row=3, column=0, sticky="ew", **padding)
         ttk.Button(parent, text="Escolher…", command=self._pick_output).grid(
             row=3, column=1, **padding
         )
 
         ttk.Label(parent, text="Nome do .txt:").grid(row=4, column=0, sticky="w")
-        ttk.Entry(parent, textvariable=self.output_name, width=48).grid(
-            row=5, column=0, sticky="ew", **padding
+        self.output_name_entry = ttk.Entry(
+            parent, textvariable=self.output_name, width=48
         )
+        self.output_name_entry.grid(row=5, column=0, sticky="ew", **padding)
         ttk.Label(
             parent,
             text="(vazio = mesmo nome do áudio)",
@@ -262,9 +263,10 @@ class TranscriberApp(tk.Tk):
         ttk.Button(btn_frame, text="Limpar lista", command=self._batch_clear).pack(side=tk.LEFT)
 
         ttk.Label(parent, text="Pasta de saída:").grid(row=2, column=0, sticky="w")
-        ttk.Entry(parent, textvariable=self.output_dir, width=48).grid(
-            row=3, column=0, sticky="ew", **padding
+        self.batch_output_entry = ttk.Entry(
+            parent, textvariable=self.output_dir, width=48
         )
+        self.batch_output_entry.grid(row=3, column=0, sticky="ew", **padding)
         ttk.Button(parent, text="Escolher…", command=self._pick_output).grid(
             row=3, column=1, **padding
         )
@@ -350,13 +352,66 @@ class TranscriberApp(tk.Tk):
             quality_preset="personalizado",
         )
 
+    def _app_root(self) -> Path:
+        if getattr(sys, "frozen", False):
+            return Path(sys.executable).resolve().parent
+        return Path(__file__).resolve().parent
+
+    def _run_log_candidates(self) -> list[Path]:
+        roots: list[Path] = []
+        if getattr(sys, "frozen", False):
+            roots.append(Path(sys.executable).resolve().parent)
+            roots.append(Path.cwd())
+        else:
+            roots.append(Path(__file__).resolve().parent)
+        roots.append(Path.cwd())
+        roots.append(Path.home() / "AudioTranscriber")
+
+        seen: set[Path] = set()
+        candidates: list[Path] = []
+        for root in roots:
+            path = (root / "last_run.log").resolve()
+            if path not in seen:
+                seen.add(path)
+                candidates.append(path)
+        return candidates
+
+    def _run_log_path(self) -> Path:
+        if self._active_log_path is not None:
+            return self._active_log_path
+        return self._run_log_candidates()[0]
+
+    def _reset_run_log(self) -> None:
+        """Substitui o log — mantém só a última execução."""
+        started = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        header = f"=== AudioTranscriber — última execução ({started}) ===\n"
+        self._active_log_path = None
+        errors: list[str] = []
+
+        for path in self._run_log_candidates():
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(header, encoding="utf-8")
+                self._active_log_path = path
+                return
+            except OSError as exc:
+                errors.append(f"{path} ({exc})")
+
+        detail = errors[0] if errors else "erro desconhecido"
+        self.status.set(f"Não foi possível criar last_run.log: {detail}")
+
     def _log(self, message: str) -> None:
+        if self._active_log_path is None:
+            self._reset_run_log()
+        path = self._active_log_path
+        if path is None:
+            return
         try:
-            log_path = Path(os.environ.get("TEMP", ".")) / "AudioTranscriber.log"
-            with log_path.open("a", encoding="utf-8") as handle:
+            with path.open("a", encoding="utf-8") as handle:
                 handle.write(message.rstrip() + "\n")
-        except OSError:
-            pass
+                handle.flush()
+        except OSError as exc:
+            self.status.set(f"Erro ao gravar log em {path}: {exc}")
 
     def _update_config_status(self, settings: TranscriptionSettings) -> None:
         self.status.set(
@@ -497,16 +552,29 @@ class TranscriberApp(tk.Tk):
         self._cancel_event.clear()
         self._stop_heartbeat()
         self._flush_progress_queue()
+        self._log(f"job {self._job_id}: validação OK, preparando UI")
         self._set_busy(True)
         self.cancel_btn.configure(state=tk.NORMAL)
-        self._log(f"job {self._job_id}: transcription started")
+        self._log(f"job {self._job_id}: iniciando worker")
+
+    def _set_files_inputs_enabled(self, enabled: bool) -> None:
+        state = tk.NORMAL if enabled else tk.DISABLED
+        for widget in (
+            getattr(self, "input_entry", None),
+            getattr(self, "output_entry", None),
+            getattr(self, "output_name_entry", None),
+            getattr(self, "batch_output_entry", None),
+            self.batch_listbox,
+        ):
+            if widget is not None:
+                widget.configure(state=state)
 
     def _set_busy(self, busy: bool) -> None:
         state = tk.DISABLED if busy else tk.NORMAL
         self.transcribe_btn.configure(state=state)
         self.cancel_btn.configure(state=tk.NORMAL if busy else tk.DISABLED)
         self.quality_combo.configure(state="disabled" if busy else "readonly")
-        self.files_notebook.configure(state="disabled" if busy else "normal")
+        self._set_files_inputs_enabled(not busy)
         if busy:
             self._update_preset_fields_state(self._get_preset_key())
             for combo in self._preset_combos:
@@ -523,9 +591,13 @@ class TranscriberApp(tk.Tk):
                 self.status.set(f"Dispositivo: {DEVICE}")
 
     def _start_transcription(self) -> None:
+        self._reset_run_log()
+        self._log("Botão Transcrever clicado")
         if self._is_batch_mode():
+            self._log("Modo: vários arquivos")
             self._start_batch_transcription()
         else:
+            self._log("Modo: um arquivo")
             self._start_single_transcription()
 
     def _start_single_transcription(self) -> None:
@@ -534,52 +606,77 @@ class TranscriberApp(tk.Tk):
         output_name = self.output_name.get().strip() or None
 
         if not input_file:
+            self._log("Abortado: nenhum arquivo de entrada selecionado")
             messagebox.showwarning("Atenção", "Selecione um arquivo de entrada.")
             return
         if not output_folder:
+            self._log("Abortado: pasta de saída não selecionada")
             messagebox.showwarning("Atenção", "Selecione uma pasta de saída.")
             return
 
         input_path = Path(input_file)
         if not input_path.is_file():
+            self._log(f"Abortado: arquivo não encontrado: {input_file}")
             messagebox.showerror("Erro", "Arquivo de entrada não encontrado.")
             return
 
-        settings = self._build_settings()
-        self._begin_transcription_job()
-        self._apply_progress(0.0, "Iniciando transcrição… 0%")
+        self._log(f"Entrada: {input_path}")
+        self._log(f"Saída: {output_folder}")
 
-        thread = threading.Thread(
-            target=self._run_single_transcription,
-            args=(
-                input_path,
-                Path(output_folder),
-                output_name,
-                settings,
-                self.include_timestamps.get(),
-            ),
-            daemon=True,
-        )
-        thread.start()
+        try:
+            settings = self._build_settings()
+            self._log(
+                f"Config: preset={settings.quality_preset}, "
+                f"modelo={settings.model_size}, idioma={settings.language}"
+            )
+            self._begin_transcription_job()
+            self._apply_progress(0.0, "Iniciando transcrição… 0%")
+
+            thread = threading.Thread(
+                target=self._run_single_transcription,
+                args=(
+                    input_path,
+                    Path(output_folder),
+                    output_name,
+                    settings,
+                    self.include_timestamps.get(),
+                ),
+                daemon=True,
+            )
+            thread.start()
+            self._log(f"job {self._job_id}: thread de transcrição iniciada")
+        except Exception as exc:
+            detail = f"{exc}\n\n{traceback.format_exc()}"
+            self._log(f"ERRO ao iniciar transcrição:\n{detail}")
+            self._set_busy(False)
+            messagebox.showerror(
+                "Erro ao iniciar",
+                f"{exc}\n\nDetalhes em:\n{self._run_log_path()}",
+            )
 
     def _start_batch_transcription(self) -> None:
         output_folder = self.output_dir.get().strip()
 
         if not self._batch_paths:
+            self._log("Abortado: lista de lote vazia")
             messagebox.showwarning("Atenção", "Adicione pelo menos um arquivo à lista.")
             return
         if not output_folder:
+            self._log("Abortado: pasta de saída não selecionada (lote)")
             messagebox.showwarning("Atenção", "Selecione uma pasta de saída.")
             return
 
         paths = [Path(p) for p in self._batch_paths]
         missing = [p.name for p in paths if not p.is_file()]
         if missing:
+            self._log(f"Abortado: arquivos ausentes: {', '.join(missing[:5])}")
             messagebox.showerror(
                 "Erro",
                 "Arquivos não encontrados:\n" + "\n".join(missing[:10]),
             )
             return
+
+        self._log(f"Lote: {len(paths)} arquivo(s) -> {output_folder}")
 
         settings = self._build_settings()
         self._begin_transcription_job()
@@ -779,8 +876,9 @@ class TranscriberApp(tk.Tk):
     def _on_error(self, detail: str) -> None:
         self._set_busy(False)
         self.progress_text.set("Erro")
-        log_path = Path(os.environ.get("TEMP", ".")) / "AudioTranscriber.log"
+        log_path = self._run_log_path()
         summary = detail.splitlines()[0] if detail else "Erro desconhecido"
+        self._log(f"ERRO na UI: {detail}")
         self.status.set(f"Erro: {summary}")
         messagebox.showerror(
             "Erro",

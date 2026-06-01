@@ -127,13 +127,14 @@ class TranscriberApp(tk.Tk):
             return Path(sys.executable).resolve().parent
         return Path(__file__).resolve().parents[3]
 
-    def _run_log_candidates(self) -> list[Path]:
+    def _run_log_fallback_candidates(self) -> list[Path]:
+        """Usado só se a pasta de saída não for gravável."""
         roots: list[Path] = []
         if getattr(sys, "frozen", False):
             roots.append(Path(sys.executable).resolve().parent)
             roots.append(Path.cwd())
         else:
-            roots.append(Path(__file__).resolve().parent)
+            roots.append(self._app_root())
         roots.append(Path.cwd())
         roots.append(Path.home() / "AudioTranscriber")
 
@@ -146,19 +147,26 @@ class TranscriberApp(tk.Tk):
                 candidates.append(path)
         return candidates
 
+    def _run_log_candidates(self, output_dir: Path | None = None) -> list[Path]:
+        candidates: list[Path] = []
+        if output_dir is not None:
+            candidates.append((output_dir.resolve() / "last_run.log"))
+        candidates.extend(self._run_log_fallback_candidates())
+        return candidates
+
     def _run_log_path(self) -> Path:
         if self._active_log_path is not None:
             return self._active_log_path
-        return self._run_log_candidates()[0]
+        return self._run_log_fallback_candidates()[0]
 
-    def _reset_run_log(self) -> None:
-        """Substitui o log — mantém só a última execução."""
+    def _reset_run_log(self, output_dir: Path | None = None) -> None:
+        """Substitui o log na pasta de saída (ou fallback se não for gravável)."""
         started = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         header = f"=== AudioTranscriber — última execução ({started}) ===\n"
         self._active_log_path = None
         errors: list[str] = []
 
-        for path in self._run_log_candidates():
+        for path in self._run_log_candidates(output_dir):
             try:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(header, encoding="utf-8")
@@ -363,16 +371,12 @@ class TranscriberApp(tk.Tk):
             self._language_combo.configure(state="readonly")
             self._update_preset_fields_state(self._get_preset_key())
             if not self.progress_text.get().strip():
-                self.status.set(f"Dispositivo: {DEVICE}")
+                self.status.set(f"Dispositivo: {self._controller.device}")
 
     def _start_transcription(self) -> None:
-        self._reset_run_log()
-        self._log("Botão Transcrever clicado")
         if self._is_batch_mode():
-            self._log("Modo: vários arquivos")
             self._start_batch_transcription()
         else:
-            self._log("Modo: um arquivo")
             self._start_single_transcription()
 
     def _start_single_transcription(self) -> None:
@@ -381,17 +385,26 @@ class TranscriberApp(tk.Tk):
         output_name = self.output_name.get().strip() or None
 
         if not input_file:
+            self._reset_run_log()
+            self._log("Botão Transcrever clicado")
+            self._log("Modo: um arquivo")
             self._log("Abortado: nenhum arquivo de entrada selecionado")
             messagebox.showwarning("Atenção", "Selecione um arquivo de entrada.")
             return
 
         input_path = Path(input_file)
         if not input_path.is_file():
+            self._reset_run_log(input_path.parent)
+            self._log("Botão Transcrever clicado")
+            self._log("Modo: um arquivo")
             self._log(f"Abortado: arquivo não encontrado: {input_file}")
             messagebox.showerror("Erro", "Arquivo de entrada não encontrado.")
             return
 
         output_path = self._output_dir_for_input(input_path)
+        self._reset_run_log(output_path)
+        self._log("Botão Transcrever clicado")
+        self._log("Modo: um arquivo")
         if output_folder:
             self._log(f"Entrada: {input_path}")
             self._log(f"Saída: {output_path}")
@@ -434,6 +447,9 @@ class TranscriberApp(tk.Tk):
         output_folder = self.output_dir.get().strip()
 
         if not self._batch_paths:
+            self._reset_run_log()
+            self._log("Botão Transcrever clicado")
+            self._log("Modo: vários arquivos")
             self._log("Abortado: lista de lote vazia")
             messagebox.showwarning("Atenção", "Adicione pelo menos um arquivo à lista.")
             return
@@ -441,6 +457,10 @@ class TranscriberApp(tk.Tk):
         paths = [Path(p) for p in self._batch_paths]
         missing = [p.name for p in paths if not p.is_file()]
         if missing:
+            log_dir = paths[0].parent if paths else None
+            self._reset_run_log(log_dir)
+            self._log("Botão Transcrever clicado")
+            self._log("Modo: vários arquivos")
             self._log(f"Abortado: arquivos ausentes: {', '.join(missing[:5])}")
             messagebox.showerror(
                 "Erro",
@@ -449,6 +469,14 @@ class TranscriberApp(tk.Tk):
             return
 
         use_input_folder = not output_folder
+        log_dir = (
+            Path(output_folder).resolve()
+            if output_folder
+            else paths[0].resolve().parent
+        )
+        self._reset_run_log(log_dir)
+        self._log("Botão Transcrever clicado")
+        self._log("Modo: vários arquivos")
         if output_folder:
             self._log(f"Lote: {len(paths)} arquivo(s) -> {output_folder}")
         else:

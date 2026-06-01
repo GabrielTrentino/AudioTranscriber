@@ -9,7 +9,7 @@ flowchart TB
     subgraph entry [Pontos de entrada]
         GUI[gui.py / TranscriberApp]
         CLI[python -m audiotranscriber]
-        API[main.py / FastAPI]
+        API[audiotranscriber-api / FastAPI]
     end
 
     subgraph app_layer [Aplicação]

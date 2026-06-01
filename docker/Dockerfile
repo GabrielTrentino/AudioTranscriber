@@ -1,4 +1,4 @@
-# API headless — AudioTranscriber
+# API headless — AudioTranscriber (build: docker compose -f docker/docker-compose.yml)
 FROM python:3.12-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \

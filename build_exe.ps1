@@ -1,12 +1,12 @@
 # Gera executável Windows da interface gráfica (gui.py).
-# Requer: venv ativo com requirements.txt + requirements-build.txt instalados.
+# Requer: venv com requirements.txt + scripts/requirements-build.txt instalados.
 
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
 $python = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
 if (-not (Test-Path $python)) {
-    Write-Error "Crie o venv antes: python -m venv .venv; pip install -r requirements.txt -r requirements-build.txt"
+    Write-Error "Crie o venv antes: python -m venv .venv; pip install -r requirements.txt -r scripts/requirements-build.txt"
 }
 
 # UPX desligado: evita falha ao carregar python3xx.dll no Windows

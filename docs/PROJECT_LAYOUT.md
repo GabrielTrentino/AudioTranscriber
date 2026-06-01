@@ -6,53 +6,53 @@ Ao clonar `https://github.com/GabrielTrentino/AudioTranscriber`, o Git cria:
 
 ```text
 AudioTranscriber/          ← pasta do clone (nome do repositório)
-  AudioTranscriber/        ← raiz real do código (README, gui.py, src/)
+  AudioTranscriber/        ← raiz real do código
 ```
 
-Isso é comum quando o repositório remoto já se chama `AudioTranscriber`. **Trabalhe sempre dentro da pasta interna** (onde estão `gui.py`, `src/` e `README.md`).
+**Trabalhe sempre na pasta interna** (onde estão `gui.py`, `src/` e `README.md`).
 
-## Estrutura atual (após P0)
+## Raiz do projeto (arquivos principais)
 
 ```text
-AudioTranscriber/              ← raiz do projeto (use esta pasta)
-  src/
-    audiotranscriber/
-      config/                  AppConfig (env + config.yaml)
-      core/                    settings, model manager, formatter
-      services/                TranscriptionService
-      api/                     FastAPI
-      gui/
-        views/                 widgets tkinter
-        controller.py          jobs sem Whisper na UI
-        app.py                 janela principal
-  gui.py                       atalho: python gui.py
-  main.py                      atalho: uvicorn
-  transcriber.py               compatibilidade imports antigos
-  config.yaml.example
-  docs/
+AudioTranscriber/
+  README.md
+  LICENSE
+  pyproject.toml
+  requirements.txt
+  gui.py                 ← python gui.py / PyInstaller
   build_exe.ps1
-  dist/                        executável (gerado)
+  src/audiotranscriber/  ← código
+  docs/
+  config/
+  docker/
+  scripts/
+```
+
+## Pacote `src/audiotranscriber/`
+
+```text
+  config/       AppConfig (env + config.yaml na raiz)
+  core/         settings, ModelManager, formatter, exporters
+  services/     TranscriptionService, fila, diarização
+  api/          FastAPI
+  gui/          views, controller, app
+  cli.py        python -m audiotranscriber
 ```
 
 ## Como executar
 
 ```powershell
-cd AudioTranscriber\AudioTranscriber   # pasta interna após clone
+cd AudioTranscriber\AudioTranscriber
 python -m venv .venv
 .\.venv\Scripts\activate
+pip install -r requirements.txt
 pip install -e .
 python gui.py
 ```
 
-Ou sem instalar o pacote:
+API: `audiotranscriber-api` · CLI: `python -m audiotranscriber transcribe …`
 
-```powershell
-pip install -r requirements.txt
-python gui.py
-```
+## Executável e log
 
-(`_path_setup.py` adiciona `src/` ao `PYTHONPATH` automaticamente.)
-
-## Executável
-
-O `.exe` fica em `dist\AudioTranscriber\`. O log `last_run.log` é criado **na mesma pasta do executável**.
+- Build: `.\build_exe.ps1` → `dist\AudioTranscriber\`
+- `last_run.log` na **pasta de saída** do `.txt` (não na pasta do `.exe`)

@@ -4,25 +4,23 @@ Transcrição de áudio e vídeo para texto com [faster-whisper](https://github.
 
 O projeto oferece:
 
-- **Interface gráfica (GUI)** — `gui.py`, recomendado para uso no dia a dia e para o `.exe` no Windows.
-- **API HTTP** — `main.py` (FastAPI), para integração com outros sistemas.
+- **Interface gráfica (GUI)** — `gui.py` ou `audiotranscriber-gui`
+- **API HTTP** — `audiotranscriber-api` (FastAPI)
+- **CLI** — `python -m audiotranscriber`
 
 ## Estrutura do projeto
 
-Código principal em `src/audiotranscriber/`. Detalhes da pasta dupla após o clone: [`docs/PROJECT_LAYOUT.md`](docs/PROJECT_LAYOUT.md).
+Código em `src/audiotranscriber/`. Raiz enxuta; detalhes: [`docs/PROJECT_LAYOUT.md`](docs/PROJECT_LAYOUT.md).
 
-| Caminho | Função |
-|---------|--------|
-| `src/audiotranscriber/gui/` | Interface (views + controller + app) |
-| `src/audiotranscriber/services/` | `TranscriptionService` (transcrição e gravação) |
-| `src/audiotranscriber/core/` | Settings, `ModelManager`, formatter |
-| `src/audiotranscriber/config/` | `AppConfig` (env + `config.yaml` opcional) |
-| `src/audiotranscriber/api/` | FastAPI |
-| `gui.py` / `main.py` | Atalhos na raiz do repositório |
-| `transcriber.py` | Compatibilidade com imports antigos |
-| `config.yaml.example` | Exemplo de configuração local |
-| `build_exe.ps1` | Executável Windows (PyInstaller) |
-| `TODO.md` | Roadmap |
+**Na raiz:** `README.md`, `LICENSE`, `pyproject.toml`, `requirements.txt`, `gui.py`, `build_exe.ps1`
+
+| Pasta / arquivo | Função |
+|-----------------|--------|
+| `src/audiotranscriber/` | Pacote principal (gui, api, core, services) |
+| `docs/` | `PROJECT_LAYOUT.md`, `ARCHITECTURE.md`, `TODO.md` |
+| `config/` | `config.yaml.example` |
+| `docker/` | API headless (Dockerfile, compose) |
+| `scripts/` | Build PyInstaller, shim legado opcional |
 
 ## Requisitos
 
@@ -39,7 +37,7 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-Opcional: copie `config.yaml.example` para `config.yaml` para ajustar device, idioma padrão, API, etc.
+Opcional: copie `config/config.yaml.example` para `config.yaml` na raiz (device, idioma, API, etc.).
 
 ## Linha de comando (CLI)
 
@@ -96,11 +94,12 @@ Marque **Incluir timestamp** para gravar início e fim de cada trecho:
 
 A cada clique em **Transcrever**, o app recria um log com **apenas a última execução**:
 
-| Como você roda | Caminho típico do log |
-|----------------|------------------------|
-| `python gui.py` | `AudioTranscriber\last_run.log` (pasta do `gui.py`) |
-| `.exe` em `dist` | `dist\AudioTranscriber\last_run.log` (ao lado do `.exe`) |
-| Fallback | `%USERPROFILE%\AudioTranscriber\last_run.log` |
+| Situação | Caminho do log |
+|----------|----------------|
+| Um arquivo | Mesma pasta do `.txt` (pasta de saída ou pasta do áudio) |
+| Lote com pasta de saída | Dentro da pasta de saída escolhida |
+| Lote sem pasta de saída | Pasta do primeiro arquivo da lista |
+| Fallback (pasta não gravável) | Ao lado do `.exe` ou `%USERPROFILE%\AudioTranscriber\` |
 
 Exemplo de conteúdo:
 
@@ -136,7 +135,7 @@ Segurança opcional via `API_KEY` (header `X-Api-Key`). CORS: `CORS_ORIGINS`. Ra
 ### Docker (API headless)
 
 ```powershell
-docker compose up --build
+docker compose -f docker/docker-compose.yml up --build
 ```
 
 ### Exemplo
@@ -192,7 +191,7 @@ Build com **[PyInstaller](https://pyinstaller.org/)** via `build_exe.ps1` (modo 
 
 ```powershell
 .\.venv\Scripts\activate
-pip install -r requirements.txt -r requirements-build.txt
+pip install -r requirements.txt -r scripts/requirements-build.txt
 .\build_exe.ps1
 ```
 
@@ -207,7 +206,7 @@ Distribua a **pasta inteira** `dist\AudioTranscriber\`. **Não** execute nada em
 | Tamanho | Centenas de MB (Whisper + ONNX + dependências) |
 | Primeira execução | Download do modelo Whisper (internet uma vez) |
 | FFmpeg | PATH do sistema **ou** `ffmpeg.exe` ao lado do `.exe` |
-| Log | `last_run.log` na pasta do executável |
+| Log | `last_run.log` na pasta de saída do `.txt` |
 | API | Não vai no `.exe` por padrão; foco na GUI |
 
 ### Uso offline do .exe
@@ -253,7 +252,7 @@ A pasta de saída é **opcional**. Se ficar em branco, o app usa a pasta do arqu
 
 ## Roadmap
 
-Melhorias planejadas estão em [`TODO.md`](TODO.md) (pacote modular, testes, CI, mais formatos de saída, etc.).
+Melhorias planejadas estão em [`docs/TODO.md`](docs/TODO.md).
 
 ## Licença
 

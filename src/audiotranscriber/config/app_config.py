@@ -26,6 +26,17 @@ def _optional_int(value: object) -> int | None:
     return int(value)
 
 
+def _parse_origins(value: object) -> list[str]:
+    if value is None or value == "":
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    text = str(value).strip()
+    if not text:
+        return []
+    return [part.strip() for part in text.split(",") if part.strip()]
+
+
 @dataclass
 class AppConfig:
     device: str = "cpu"
@@ -40,6 +51,12 @@ class AppConfig:
     num_workers: int | None = None
     chunk_length: int | None = None
     beam_size: int | None = None
+    api_host: str = "127.0.0.1"
+    api_port: int = 8000
+    api_key: str | None = None
+    cors_origins: list[str] = field(default_factory=list)
+    rate_limit_requests: int = 60
+    rate_limit_window_seconds: int = 60
 
     @classmethod
     def from_sources(cls, yaml_path: Path | None = None) -> AppConfig:
@@ -97,7 +114,26 @@ class AppConfig:
             beam_size=_optional_int(
                 env_or_yaml("WHISPER_BEAM_SIZE", "beam_size", None)
             ),
+            api_host=str(env_or_yaml("API_HOST", "api_host", "127.0.0.1")),
+            api_port=int(env_or_yaml("API_PORT", "api_port", 8000)),
+            api_key=_optional_api_key(env_or_yaml("API_KEY", "api_key", None)),
+            cors_origins=_parse_origins(
+                env_or_yaml("CORS_ORIGINS", "cors_origins", "")
+            ),
+            rate_limit_requests=int(
+                env_or_yaml("API_RATE_LIMIT", "rate_limit_requests", 60)
+            ),
+            rate_limit_window_seconds=int(
+                env_or_yaml("API_RATE_WINDOW", "rate_limit_window_seconds", 60)
+            ),
         )
+
+
+def _optional_api_key(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 _config: AppConfig | None = None

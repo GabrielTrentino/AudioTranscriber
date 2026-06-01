@@ -6,18 +6,28 @@ from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 
+from audiotranscriber.api.security import ApiKeyMiddleware
+from audiotranscriber.config import get_app_config
 from audiotranscriber.core.settings import TranscriptionSettings
 from audiotranscriber.services import TranscriptionService
 
 app = FastAPI(title="AudioTranscriber")
+app.add_middleware(ApiKeyMiddleware)
 _executor = ThreadPoolExecutor(max_workers=1)
 _service = TranscriptionService()
 
 
 @app.get("/health")
 async def health():
-    cfg = TranscriptionSettings.from_env()
-    return {"status": "ok", "model": cfg.model_size, "device": _service.device}
+    cfg = get_app_config()
+    whisper = TranscriptionSettings.from_env()
+    return {
+        "status": "ok",
+        "model": whisper.model_size,
+        "device": _service.device,
+        "bind": f"{cfg.api_host}:{cfg.api_port}",
+        "auth_required": bool(cfg.api_key),
+    }
 
 
 @app.post("/transcribe")
@@ -30,12 +40,16 @@ async def transcribe(
     ),
     model: str | None = Query(None, description="Sobrescreve o modelo do preset"),
     language: str = Query("pt", description="Código do idioma ou auto"),
+    export_format: str = Query("txt", description="txt | srt | vtt | json"),
 ):
     if not file.filename:
         raise HTTPException(status_code=400, detail="Nome do arquivo ausente.")
 
     if quality not in ("rapida", "equilibrada", "alta"):
         raise HTTPException(status_code=400, detail="quality inválido.")
+
+    if export_format not in ("txt", "srt", "vtt", "json"):
+        raise HTTPException(status_code=400, detail="export_format inválido.")
 
     settings = TranscriptionSettings.from_quality_preset(quality)
     if model:
@@ -57,10 +71,11 @@ async def transcribe(
                 tmp_path,
                 settings=settings,
                 include_timestamps=timestamps,
+                export_format=export_format,
             ),
         )
 
-        return {"text": text}
+        return {"text": text, "format": export_format}
 
     except HTTPException:
         raise
@@ -74,4 +89,5 @@ async def transcribe(
 def run() -> None:
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    cfg = get_app_config()
+    uvicorn.run(app, host=cfg.api_host, port=cfg.api_port)

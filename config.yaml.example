@@ -14,3 +14,11 @@ default_quality_preset: equilibrada
 # num_workers: 1
 # chunk_length: 30
 # beam_size: 5
+
+# API (audiotranscriber-api)
+# api_host: 127.0.0.1
+# api_port: 8000
+# api_key: change-me
+# cors_origins: http://localhost:3000
+# rate_limit_requests: 60
+# rate_limit_window_seconds: 60

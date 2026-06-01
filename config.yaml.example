@@ -1,0 +1,16 @@
+# Copie para config.yaml na raiz do projeto (opcional).
+# Variáveis de ambiente WHISPER_* têm prioridade quando definidas.
+
+device: cpu
+pause_gap_seconds: 1.5
+output_format: line
+default_language: pt
+default_model: base
+default_compute_type: int8
+default_memory_profile: balanced
+default_quality_preset: equilibrada
+
+# cpu_threads: 0
+# num_workers: 1
+# chunk_length: 30
+# beam_size: 5

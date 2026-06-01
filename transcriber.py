@@ -1,5 +1,6 @@
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from faster_whisper import WhisperModel
@@ -27,13 +28,62 @@ PAUSE_GAP_SECONDS = float(os.getenv("WHISPER_PAUSE_GAP", "1.5"))
 # "none" | "line" (uma linha por segmento) | "time" ([00:01:23] texto)
 OUTPUT_FORMAT = os.getenv("WHISPER_OUTPUT_FORMAT", "line").lower()
 
+_MEMORY_PRESETS = {
+    "low": {"cpu_threads": 2, "num_workers": 1, "chunk_length": 15, "beam_size": 1},
+    "balanced": {"cpu_threads": 0, "num_workers": 1, "chunk_length": None, "beam_size": 5},
+    "high": {"cpu_threads": 0, "num_workers": 1, "chunk_length": 30, "beam_size": 5},
+}
+
+
+def _optional_int_env(name: str) -> int | None:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return None
+    return int(value)
+
+
+def _load_memory_settings() -> dict:
+    """Configura uso de RAM/CPU. Perfil + variáveis individuais (env sobrescreve perfil)."""
+    profile = os.getenv("WHISPER_MEMORY_PROFILE", "balanced").strip().lower()
+    if profile not in _MEMORY_PRESETS:
+        profile = "balanced"
+
+    settings = dict(_MEMORY_PRESETS[profile])
+
+    cpu_threads = _optional_int_env("WHISPER_CPU_THREADS")
+    if cpu_threads is not None:
+        settings["cpu_threads"] = cpu_threads
+
+    num_workers = _optional_int_env("WHISPER_NUM_WORKERS")
+    if num_workers is not None:
+        settings["num_workers"] = num_workers
+
+    chunk_length = _optional_int_env("WHISPER_CHUNK_LENGTH")
+    if chunk_length is not None:
+        settings["chunk_length"] = chunk_length
+
+    beam_size = _optional_int_env("WHISPER_BEAM_SIZE")
+    if beam_size is not None:
+        settings["beam_size"] = beam_size
+
+    return settings
+
+
+MEMORY = _load_memory_settings()
+
 _model: WhisperModel | None = None
 
 
 def get_model() -> WhisperModel:
     global _model
     if _model is None:
-        _model = WhisperModel(MODEL_SIZE, device=DEVICE, compute_type=COMPUTE_TYPE)
+        _model = WhisperModel(
+            MODEL_SIZE,
+            device=DEVICE,
+            compute_type=COMPUTE_TYPE,
+            cpu_threads=MEMORY["cpu_threads"],
+            num_workers=MEMORY["num_workers"],
+        )
     return _model
 
 
@@ -83,6 +133,7 @@ def transcribe_path(
     path: str | Path,
     *,
     include_timestamps: bool | None = None,
+    on_progress: Callable[[float, str | None], None] | None = None,
 ) -> str:
     output_format = None
     if include_timestamps is True:
@@ -90,12 +141,39 @@ def transcribe_path(
     elif include_timestamps is False:
         output_format = "line"
 
-    segments, _ = get_model().transcribe(
-        str(path),
-        language=LANGUAGE,
-        vad_filter=True,
-    )
-    return format_segments(segments, output_format)
+    if on_progress:
+        on_progress(0.0, "Carregando modelo…")
+
+    model = get_model()
+
+    if on_progress:
+        on_progress(0.0, "Transcrevendo…")
+
+    transcribe_kwargs: dict = {
+        "language": LANGUAGE,
+        "vad_filter": True,
+        "beam_size": MEMORY["beam_size"],
+    }
+    if MEMORY["chunk_length"] is not None:
+        transcribe_kwargs["chunk_length"] = MEMORY["chunk_length"]
+
+    segments, info = model.transcribe(str(path), **transcribe_kwargs)
+    duration = getattr(info, "duration", None) or 0.0
+
+    collected = []
+    for segment in segments:
+        collected.append(segment)
+        if on_progress:
+            if duration > 0:
+                ratio = min(segment.end / duration, 0.99)
+                on_progress(ratio, f"Transcrevendo… {int(ratio * 100)}%")
+            else:
+                on_progress(-1.0, "Transcrevendo…")
+
+    if on_progress:
+        on_progress(1.0, "Salvando arquivo…")
+
+    return format_segments(collected, output_format)
 
 
 def resolve_output_filename(name: str | None, input_path: Path) -> str:
@@ -129,6 +207,11 @@ def transcribe_to_file(
     output_name: str | None = None,
     *,
     include_timestamps: bool = False,
+    on_progress: Callable[[float, str | None], None] | None = None,
 ) -> Path:
-    text = transcribe_path(input_path, include_timestamps=include_timestamps)
+    text = transcribe_path(
+        input_path,
+        include_timestamps=include_timestamps,
+        on_progress=on_progress,
+    )
     return save_transcription(input_path, output_dir, text, output_name)

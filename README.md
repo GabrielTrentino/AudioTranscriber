@@ -28,6 +28,8 @@ Exemplo com timestamp:
 [00:00:15 - 00:00:22] O primeiro ponto é o orçamento.
 ```
 
+Durante a transcrição, a barra de progresso avança conforme os trechos do áudio são processados (com base na duração total).
+
 ```bash
 python gui.py
 ```
@@ -62,6 +64,29 @@ Resposta:
 | `WHISPER_LANGUAGE` | `pt` | Código do idioma |
 | `WHISPER_OUTPUT_FORMAT` | `line` | `line` (uma linha por trecho), `time` (com `[MM:SS - MM:SS]`), `none` (texto corrido) |
 | `WHISPER_PAUSE_GAP` | `1.5` | Segundos de pausa para inserir linha em branco entre parágrafos |
+
+### Uso de memória
+
+Não há um limite fixo em MB (depende do modelo e do áudio). Use o perfil ou ajuste fino:
+
+| Variável | Padrão | Descrição |
+|----------|--------|-----------|
+| `WHISPER_MEMORY_PROFILE` | `balanced` | `low` (menos RAM), `balanced`, `high` (mais qualidade, mais RAM) |
+| `WHISPER_CPU_THREADS` | (do perfil) | Threads na CPU (`0` = automático) |
+| `WHISPER_NUM_WORKERS` | `1` | Workers paralelos (mais = mais RAM) |
+| `WHISPER_CHUNK_LENGTH` | (do perfil) | Segundos por bloco de áudio (menor = menos pico de RAM em arquivos longos) |
+| `WHISPER_BEAM_SIZE` | (do perfil) | `1` usa menos memória; `5` é mais preciso |
+
+Perfil **`low`** (PC com pouca RAM):
+
+```powershell
+set WHISPER_MEMORY_PROFILE=low
+set WHISPER_MODEL=tiny
+set WHISPER_COMPUTE_TYPE=int8
+python gui.py
+```
+
+Também ajudam: modelo menor (`tiny`/`base`) e `WHISPER_COMPUTE_TYPE=int8`.
 
 Exemplo com GPU:
 

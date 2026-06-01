@@ -15,13 +15,14 @@ class TranscriberApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("AudioTranscriber")
-        self.minsize(520, 310)
+        self.minsize(520, 340)
         self.resizable(True, False)
 
         self.input_path = tk.StringVar()
         self.output_dir = tk.StringVar()
         self.output_name = tk.StringVar()
         self.include_timestamps = tk.BooleanVar(value=True)
+        self.progress_text = tk.StringVar(value="")
         self.status = tk.StringVar(
             value=f"Modelo: {MODEL_SIZE} | Dispositivo: {DEVICE}"
         )
@@ -72,8 +73,17 @@ class TranscriberApp(tk.Tk):
         )
         self.transcribe_btn.grid(row=7, column=0, columnspan=2, pady=(12, 4))
 
+        self.progress_bar = ttk.Progressbar(
+            frame, mode="determinate", maximum=100, length=400
+        )
+        self.progress_bar.grid(row=8, column=0, columnspan=2, sticky="ew", **padding)
+
+        ttk.Label(frame, textvariable=self.progress_text).grid(
+            row=9, column=0, columnspan=2, sticky="w"
+        )
+
         ttk.Label(frame, textvariable=self.status, wraplength=480).grid(
-            row=8, column=0, columnspan=2, sticky="w"
+            row=10, column=0, columnspan=2, sticky="w"
         )
 
         frame.columnconfigure(0, weight=1)
@@ -93,9 +103,39 @@ class TranscriberApp(tk.Tk):
         if path:
             self.output_dir.set(path)
 
+    def _reset_progress(self) -> None:
+        self.progress_bar.stop()
+        self.progress_bar.configure(mode="determinate")
+        self.progress_bar["value"] = 0
+        self.progress_text.set("")
+
+    def _report_progress(self, ratio: float, message: str | None) -> None:
+        def update() -> None:
+            if message:
+                self.progress_text.set(message)
+                self.status.set(message)
+
+            if ratio < 0:
+                self.progress_bar.stop()
+                self.progress_bar.configure(mode="indeterminate")
+                self.progress_bar.start(12)
+                return
+
+            self.progress_bar.stop()
+            self.progress_bar.configure(mode="determinate")
+            percent = int(max(0.0, min(ratio, 1.0)) * 100)
+            self.progress_bar["value"] = percent
+
+        self.after(0, update)
+
     def _set_busy(self, busy: bool) -> None:
         state = tk.DISABLED if busy else tk.NORMAL
         self.transcribe_btn.configure(state=state)
+        if busy:
+            self._reset_progress()
+        else:
+            self.progress_bar.stop()
+            self.progress_bar.configure(mode="determinate")
 
     def _start_transcription(self) -> None:
         input_file = self.input_path.get().strip()
@@ -115,7 +155,7 @@ class TranscriberApp(tk.Tk):
             return
 
         self._set_busy(True)
-        self.status.set("Transcrevendo… isso pode levar alguns minutos.")
+        self.status.set("Iniciando transcrição…")
 
         thread = threading.Thread(
             target=self._run_transcription,
@@ -142,16 +182,16 @@ class TranscriberApp(tk.Tk):
                 output_dir,
                 output_name,
                 include_timestamps=include_timestamps,
+                on_progress=self._report_progress,
             )
-            self.after(
-                0,
-                lambda: self._on_success(output_file),
-            )
+            self.after(0, lambda: self._on_success(output_file))
         except Exception as exc:
             self.after(0, lambda: self._on_error(str(exc)))
 
     def _on_success(self, output_file: Path) -> None:
         self._set_busy(False)
+        self.progress_bar["value"] = 100
+        self.progress_text.set("100% — concluído")
         self.status.set(f"Concluído: {output_file}")
         messagebox.showinfo(
             "Transcrição concluída",

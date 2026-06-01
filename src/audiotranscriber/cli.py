@@ -53,6 +53,7 @@ def cmd_transcribe(args: argparse.Namespace) -> int:
             settings=settings,
             include_timestamps=args.timestamps,
             export_format=args.export_format,
+            diarize=args.diarize,
             on_progress=_progress if not args.quiet else None,
         )
     except Exception as exc:
@@ -145,6 +146,7 @@ def cmd_batch(args: argparse.Namespace) -> int:
                 settings=settings,
                 include_timestamps=args.timestamps,
                 export_format=args.export_format,
+                diarize=args.diarize,
                 on_progress=file_progress,
             )
             print(out)
@@ -187,6 +189,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--timestamps",
         action="store_true",
         help="Incluir marcações de tempo no .txt",
+    )
+    common.add_argument(
+        "--diarize",
+        action="store_true",
+        help="Atribuir falantes (requer pip install audiotranscriber[diarization])",
     )
     common.add_argument("-q", "--quiet", action="store_true", help="Sem progresso no stderr")
 

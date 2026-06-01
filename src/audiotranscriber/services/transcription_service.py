@@ -6,6 +6,12 @@ from pathlib import Path
 from audiotranscriber.core.exceptions import TranscriptionCancelled
 from audiotranscriber.core.exporters import format_export
 from audiotranscriber.core.formatter import format_segments
+from audiotranscriber.services.diarization import (
+    assign_speakers,
+    diarization_install_hint,
+    format_segments_with_speakers,
+    is_diarization_available,
+)
 from audiotranscriber.core.memory import resolve_memory_settings
 from audiotranscriber.core.model_manager import ModelManager, get_model_manager
 from audiotranscriber.core.settings import TranscriptionSettings
@@ -71,6 +77,7 @@ class TranscriptionService:
         settings: TranscriptionSettings | None = None,
         include_timestamps: bool | None = None,
         export_format: str = "txt",
+        diarize: bool = False,
         on_progress: Callable[[float, str | None], None] | None = None,
         is_cancelled: Callable[[], bool] | None = None,
     ) -> str:
@@ -119,6 +126,24 @@ class TranscriptionService:
                 else:
                     on_progress(0.0, "Transcrevendo…")
 
+        if diarize:
+            if not is_diarization_available():
+                raise RuntimeError(diarization_install_hint())
+            if on_progress:
+                on_progress(0.99, "Diarizando falantes…")
+            lang = _resolve_language(cfg.language)
+            labeled = assign_speakers(
+                Path(path),
+                collected,
+                device=self.device,
+                language=lang,
+            )
+            if fmt == "json":
+                import json
+
+                return json.dumps(labeled, ensure_ascii=False, indent=2)
+            return format_segments_with_speakers(labeled)
+
         if on_progress:
             on_progress(1.0, "Salvando arquivo… 100%")
 
@@ -150,6 +175,7 @@ class TranscriptionService:
         settings: TranscriptionSettings | None = None,
         include_timestamps: bool = False,
         export_format: str = "txt",
+        diarize: bool = False,
         on_progress: Callable[[float, str | None], None] | None = None,
         is_cancelled: Callable[[], bool] | None = None,
     ) -> Path:
@@ -158,6 +184,7 @@ class TranscriptionService:
             settings=settings,
             include_timestamps=include_timestamps,
             export_format=export_format,
+            diarize=diarize,
             on_progress=on_progress,
             is_cancelled=is_cancelled,
         )

@@ -17,6 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 build = ["pyinstaller>=6.0"]
+diarization = ["whisperx>=3.1.0"]
 
 [project.scripts]
 audiotranscriber = "audiotranscriber.cli:main"

@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from audiotranscriber.core.settings import TranscriptionSettings
-from audiotranscriber.services import TranscriptionService
+from audiotranscriber.services import JobQueue, TranscriptionService
 
 
 def _build_settings(args: argparse.Namespace) -> TranscriptionSettings:
@@ -60,6 +60,55 @@ def cmd_transcribe(args: argparse.Namespace) -> int:
         return 1
 
     print(out)
+    return 0
+
+
+def cmd_queue(args: argparse.Namespace) -> int:
+    state_path = Path(args.state_file).resolve()
+    queue = JobQueue(state_path)
+
+    if args.add:
+        paths = [Path(p).resolve() for p in args.add]
+        missing = [p for p in paths if not p.is_file()]
+        if missing:
+            for path in missing:
+                print(f"Arquivo não encontrado: {path}", file=sys.stderr)
+            return 1
+        output_dir = Path(args.output_dir).resolve() if args.output_dir else None
+        added = queue.add_files(
+            paths,
+            output_dir,
+            export_format=args.export_format,
+            include_timestamps=args.timestamps,
+        )
+        print(f"{added} job(s) adicionado(s). Total: {len(queue.state.jobs)}")
+        if not args.run:
+            return 0
+
+    pending = queue.pending_jobs()
+    if not pending and not args.run:
+        print("Nenhum job pendente.", file=sys.stderr)
+        return 0
+
+    if args.run or args.add:
+        settings = _build_settings(args)
+        service = TranscriptionService()
+
+        def progress(ratio: float, message: str | None) -> None:
+            if args.quiet:
+                return
+            pct = int(ratio * 100)
+            detail = message or ""
+            print(f"{pct}% {detail}".strip(), file=sys.stderr, flush=True)
+
+        done, failed, _cancelled = queue.run(
+            service,
+            settings,
+            on_progress=progress if not args.quiet else None,
+        )
+        print(f"Concluídos: {done}, falhas: {failed}, estado: {state_path}")
+        return 1 if failed and done == 0 else (2 if failed else 0)
+
     return 0
 
 
@@ -155,6 +204,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="Pasta única de saída (padrão: pasta de cada arquivo)",
     )
     p_batch.set_defaults(func=cmd_batch)
+
+    p_queue = sub.add_parser(
+        "queue",
+        parents=[common],
+        help="Fila persistente com retomada (JSON)",
+    )
+    p_queue.add_argument(
+        "state_file",
+        help="Arquivo de estado (ex.: jobs.json)",
+    )
+    p_queue.add_argument(
+        "add",
+        nargs="*",
+        metavar="FILE",
+        help="Adicionar arquivos à fila",
+    )
+    p_queue.add_argument("-o", "--output-dir", help="Pasta de saída para novos jobs")
+    p_queue.add_argument(
+        "--run",
+        action="store_true",
+        help="Processar jobs pendentes após adicionar (ou só retomar)",
+    )
+    p_queue.set_defaults(func=cmd_queue)
 
     return parser
 

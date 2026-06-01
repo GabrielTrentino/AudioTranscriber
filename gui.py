@@ -50,11 +50,10 @@ class TranscriberApp(tk.Tk):
         self.status = tk.StringVar(value=f"Dispositivo: {DEVICE}")
 
         self._batch_paths: list[str] = []
-        self._progress_queue: queue.SimpleQueue[tuple[float, str | None]] = (
-            queue.SimpleQueue()
-        )
+        self._progress_queue: queue.SimpleQueue = queue.SimpleQueue()
         self._progress_pump_id: str | None = None
         self._cancel_event = threading.Event()
+        self._job_id = 0
 
         self._quality_labels = {label: key for label, key in QUALITY_CHOICES}
         self._quality_keys = {key: label for label, key in QUALITY_CHOICES}
@@ -398,10 +397,9 @@ class TranscriberApp(tk.Tk):
         self._refresh_progress_ui()
 
     def _apply_progress(self, ratio: float, message: str | None) -> None:
-        """Atualiza barra e status na thread principal."""
+        """Atualiza barra e texto de progresso na thread principal."""
         if ratio < 0:
             msg = message or "Processando…"
-            self.status.set(msg)
             self._show_progress_indeterminate(msg)
             return
 
@@ -410,33 +408,48 @@ class TranscriberApp(tk.Tk):
             display = message
         else:
             display = f"Transcrevendo… {percent}%"
-        self.status.set(display)
         self._show_progress_percent(percent, display)
+
+    def _flush_progress_queue(self) -> None:
+        while True:
+            try:
+                self._progress_queue.get_nowait()
+            except queue.Empty:
+                break
+
+    def _process_progress_item(self, item) -> None:
+        if isinstance(item[0], str) and item[0] == "__callback__":
+            _, job_id, callback, args = item
+            if job_id == self._job_id:
+                callback(*args)
+            return
+        ratio, message = item
+        self._apply_progress(ratio, message)
 
     def _schedule_on_main(self, callback, *args) -> None:
         """Agenda callback na thread principal (seguro a partir de worker)."""
-        self._progress_queue.put(("__callback__", callback, args))
+        self._progress_queue.put(("__callback__", self._job_id, callback, args))
 
     def _report_progress(self, ratio: float, message: str | None) -> None:
         """Pode ser chamado da thread de trabalho; enfileira para a UI."""
         self._progress_queue.put((ratio, message))
 
-    def _pump_progress_queue(self) -> None:
+    def _drain_progress_queue(self) -> None:
         while True:
             try:
                 item = self._progress_queue.get_nowait()
             except queue.Empty:
                 break
-            if item[0] == "__callback__":
-                _, callback, args = item
-                callback(*args)
-            else:
-                ratio, message = item
-                self._apply_progress(ratio, message)
+            self._process_progress_item(item)
+
+    def _pump_progress_queue(self) -> None:
+        self._drain_progress_queue()
         self._progress_pump_id = self.after(50, self._pump_progress_queue)
 
     def _start_progress_pump(self) -> None:
-        self._stop_progress_pump(drain=False)
+        if self._progress_pump_id is not None:
+            self.after_cancel(self._progress_pump_id)
+        self._drain_progress_queue()
         self._progress_pump_id = self.after(50, self._pump_progress_queue)
 
     def _stop_progress_pump(self, *, drain: bool = True) -> None:
@@ -444,14 +457,7 @@ class TranscriberApp(tk.Tk):
             self.after_cancel(self._progress_pump_id)
             self._progress_pump_id = None
         if drain:
-            while True:
-                try:
-                    item = self._progress_queue.get_nowait()
-                except queue.Empty:
-                    break
-                if item[0] == "__callback__":
-                    _, callback, args = item
-                    callback(*args)
+            self._drain_progress_queue()
 
     def _is_cancelled(self) -> bool:
         return self._cancel_event.is_set()
@@ -463,7 +469,10 @@ class TranscriberApp(tk.Tk):
             self._apply_progress(0.0, "Cancelando…")
 
     def _begin_transcription_job(self) -> None:
+        self._job_id += 1
         self._cancel_event.clear()
+        self._stop_progress_pump(drain=False)
+        self._flush_progress_queue()
         self._set_busy(True)
         self._start_progress_pump()
         self.cancel_btn.configure(state=tk.NORMAL)
@@ -486,6 +495,8 @@ class TranscriberApp(tk.Tk):
             self.quality_combo.configure(state="readonly")
             self._language_combo.configure(state="readonly")
             self._update_preset_fields_state(self._get_preset_key())
+            if not self.progress_text.get().strip():
+                self.status.set(f"Dispositivo: {DEVICE}")
 
     def _start_transcription(self) -> None:
         if self._is_batch_mode():
@@ -657,7 +668,7 @@ class TranscriberApp(tk.Tk):
         self._set_busy(False)
         done_msg = "Concluído (100%)"
         self._show_progress_percent(100, done_msg)
-        self.status.set(f"{done_msg} — salvo em: {output_file}")
+        self.status.set(f"Salvo em: {output_file}")
         messagebox.showinfo(
             "Transcrição concluída",
             f"Texto salvo em:\n{output_file}",

@@ -1,0 +1,17 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      WHISPER_DEVICE: cpu
+      WHISPER_QUALITY_PRESET: equilibrada
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      # API_KEY: change-me
+      # CORS_ORIGINS: http://localhost:3000
+    volumes:
+      - whisper-cache:/root/.cache/huggingface
+
+volumes:
+  whisper-cache:

@@ -1,5 +1,7 @@
+import os
 import queue
 import threading
+import traceback
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -51,14 +53,15 @@ class TranscriberApp(tk.Tk):
 
         self._batch_paths: list[str] = []
         self._progress_queue: queue.SimpleQueue = queue.SimpleQueue()
-        self._progress_pump_id: str | None = None
         self._cancel_event = threading.Event()
         self._job_id = 0
+        self._heartbeat_stop = threading.Event()
 
         self._quality_labels = {label: key for label, key in QUALITY_CHOICES}
         self._quality_keys = {key: label for label, key in QUALITY_CHOICES}
 
         self._build_ui()
+        self.after(50, self._poll_ui_queue)
         self.quality_preset.set(self._quality_keys["equilibrada"])
         self._apply_quality_preset("equilibrada")
         self._update_preset_fields_state("equilibrada")
@@ -347,6 +350,14 @@ class TranscriberApp(tk.Tk):
             quality_preset="personalizado",
         )
 
+    def _log(self, message: str) -> None:
+        try:
+            log_path = Path(os.environ.get("TEMP", ".")) / "AudioTranscriber.log"
+            with log_path.open("a", encoding="utf-8") as handle:
+                handle.write(message.rstrip() + "\n")
+        except OSError:
+            pass
+
     def _update_config_status(self, settings: TranscriptionSettings) -> None:
         self.status.set(
             f"Modelo: {settings.model_size} | "
@@ -421,9 +432,12 @@ class TranscriberApp(tk.Tk):
         if isinstance(item[0], str) and item[0] == "__callback__":
             _, job_id, callback, args = item
             if job_id == self._job_id:
-                callback(*args)
+                self.after(0, lambda c=callback, a=args: c(*a))
             return
-        ratio, message = item
+
+        job_id, ratio, message = item
+        if job_id != self._job_id:
+            return
         self._apply_progress(ratio, message)
 
     def _schedule_on_main(self, callback, *args) -> None:
@@ -432,7 +446,7 @@ class TranscriberApp(tk.Tk):
 
     def _report_progress(self, ratio: float, message: str | None) -> None:
         """Pode ser chamado da thread de trabalho; enfileira para a UI."""
-        self._progress_queue.put((ratio, message))
+        self._progress_queue.put((self._job_id, ratio, message))
 
     def _drain_progress_queue(self) -> None:
         while True:
@@ -442,22 +456,32 @@ class TranscriberApp(tk.Tk):
                 break
             self._process_progress_item(item)
 
-    def _pump_progress_queue(self) -> None:
+    def _poll_ui_queue(self) -> None:
         self._drain_progress_queue()
-        self._progress_pump_id = self.after(50, self._pump_progress_queue)
+        self.after(50, self._poll_ui_queue)
 
-    def _start_progress_pump(self) -> None:
-        if self._progress_pump_id is not None:
-            self.after_cancel(self._progress_pump_id)
-        self._drain_progress_queue()
-        self._progress_pump_id = self.after(50, self._pump_progress_queue)
+    def _start_heartbeat(self, base_message: str) -> None:
+        self._heartbeat_stop.clear()
+        job_id = self._job_id
 
-    def _stop_progress_pump(self, *, drain: bool = True) -> None:
-        if self._progress_pump_id is not None:
-            self.after_cancel(self._progress_pump_id)
-            self._progress_pump_id = None
-        if drain:
-            self._drain_progress_queue()
+        def tick() -> None:
+            elapsed = 0
+            while not self._heartbeat_stop.wait(2.0):
+                if job_id != self._job_id:
+                    return
+                elapsed += 2
+                self._progress_queue.put(
+                    (
+                        job_id,
+                        0.0,
+                        f"{base_message} (aguarde, {elapsed}s)",
+                    )
+                )
+
+        threading.Thread(target=tick, daemon=True).start()
+
+    def _stop_heartbeat(self) -> None:
+        self._heartbeat_stop.set()
 
     def _is_cancelled(self) -> bool:
         return self._cancel_event.is_set()
@@ -471,11 +495,11 @@ class TranscriberApp(tk.Tk):
     def _begin_transcription_job(self) -> None:
         self._job_id += 1
         self._cancel_event.clear()
-        self._stop_progress_pump(drain=False)
+        self._stop_heartbeat()
         self._flush_progress_queue()
         self._set_busy(True)
-        self._start_progress_pump()
         self.cancel_btn.configure(state=tk.NORMAL)
+        self._log(f"job {self._job_id}: transcription started")
 
     def _set_busy(self, busy: bool) -> None:
         state = tk.DISABLED if busy else tk.NORMAL
@@ -489,7 +513,7 @@ class TranscriberApp(tk.Tk):
                 combo.configure(state="disabled")
             self._language_combo.configure(state="disabled")
         else:
-            self._stop_progress_pump()
+            self._stop_heartbeat()
             self.progress_bar.stop()
             self.progress_bar.configure(mode="determinate")
             self.quality_combo.configure(state="readonly")
@@ -581,7 +605,14 @@ class TranscriberApp(tk.Tk):
         settings: TranscriptionSettings,
         include_timestamps: bool,
     ) -> None:
+        self._report_progress(0.0, "Preparando arquivo… 0%")
+        self._start_heartbeat(
+            f"Carregando modelo {settings.model_size} e transcrevendo"
+        )
         try:
+            self._log(
+                f"job {self._job_id}: transcribe {input_path.name} -> {output_dir}"
+            )
             output_file = transcribe_to_file(
                 input_path,
                 output_dir,
@@ -591,11 +622,17 @@ class TranscriberApp(tk.Tk):
                 on_progress=self._report_progress,
                 is_cancelled=self._is_cancelled,
             )
+            self._log(f"job {self._job_id}: done {output_file}")
             self._schedule_on_main(self._on_single_success, output_file)
         except TranscriptionCancelled:
+            self._log(f"job {self._job_id}: cancelled")
             self._schedule_on_main(self._on_cancelled)
         except Exception as exc:
-            self._schedule_on_main(self._on_error, str(exc))
+            detail = f"{exc}\n\n{traceback.format_exc()}"
+            self._log(f"job {self._job_id}: error\n{detail}")
+            self._schedule_on_main(self._on_error, detail)
+        finally:
+            self._stop_heartbeat()
 
     def _run_batch_transcription(
         self,
@@ -609,6 +646,7 @@ class TranscriberApp(tk.Tk):
         errors: list[str] = []
 
         cancelled = False
+        self._start_heartbeat("Processando lote")
         try:
             for index, input_path in enumerate(paths):
                 if self._is_cancelled():
@@ -662,7 +700,11 @@ class TranscriberApp(tk.Tk):
                     self._on_batch_finished, saved, errors, output_dir
                 )
         except Exception as exc:
-            self._schedule_on_main(self._on_error, str(exc))
+            detail = f"{exc}\n\n{traceback.format_exc()}"
+            self._log(f"job {self._job_id}: batch error\n{detail}")
+            self._schedule_on_main(self._on_error, detail)
+        finally:
+            self._stop_heartbeat()
 
     def _on_single_success(self, output_file: Path) -> None:
         self._set_busy(False)
@@ -736,9 +778,14 @@ class TranscriberApp(tk.Tk):
 
     def _on_error(self, detail: str) -> None:
         self._set_busy(False)
-        self.progress_text.set("")
-        self.status.set(f"Erro: {detail}")
-        messagebox.showerror("Erro", detail)
+        self.progress_text.set("Erro")
+        log_path = Path(os.environ.get("TEMP", ".")) / "AudioTranscriber.log"
+        summary = detail.splitlines()[0] if detail else "Erro desconhecido"
+        self.status.set(f"Erro: {summary}")
+        messagebox.showerror(
+            "Erro",
+            f"{summary}\n\nDetalhes também em:\n{log_path}",
+        )
 
 
 def main() -> None:

@@ -55,6 +55,7 @@ class TranscriberApp(tk.Tk):
         self._build_ui()
         self.quality_preset.set(self._quality_keys["equilibrada"])
         self._apply_quality_preset("equilibrada")
+        self._update_preset_fields_state("equilibrada")
 
     def _build_ui(self) -> None:
         padding = {"padx": 12, "pady": 4}
@@ -91,57 +92,71 @@ class TranscriberApp(tk.Tk):
 
         ttk.Label(
             cfg_frame,
-            text="Modelo, memória, precisão e beam podem ser alterados abaixo.",
+            text="Use Personalizado para alterar modelo, memória, precisão e beam.",
             font=("TkDefaultFont", 8),
         ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
         self.advanced_frame = ttk.Frame(cfg_frame)
         self.advanced_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        self._preset_combos: list[ttk.Combobox] = []
 
         ttk.Label(self.advanced_frame, text="Modelo:").grid(row=0, column=0, sticky="w")
-        ttk.Combobox(
-            self.advanced_frame,
-            textvariable=self.model_size,
-            values=MODEL_OPTIONS,
-            state="readonly",
-            width=14,
-        ).grid(row=0, column=1, sticky="w", padx=6, pady=2)
+        self._preset_combos.append(
+            ttk.Combobox(
+                self.advanced_frame,
+                textvariable=self.model_size,
+                values=MODEL_OPTIONS,
+                state="readonly",
+                width=14,
+            )
+        )
+        self._preset_combos[-1].grid(row=0, column=1, sticky="w", padx=6, pady=2)
 
         ttk.Label(self.advanced_frame, text="Memória:").grid(row=0, column=2, sticky="w")
-        ttk.Combobox(
-            self.advanced_frame,
-            textvariable=self.memory_profile,
-            values=MEMORY_PROFILE_OPTIONS,
-            state="readonly",
-            width=12,
-        ).grid(row=0, column=3, sticky="w", padx=6, pady=2)
+        self._preset_combos.append(
+            ttk.Combobox(
+                self.advanced_frame,
+                textvariable=self.memory_profile,
+                values=MEMORY_PROFILE_OPTIONS,
+                state="readonly",
+                width=12,
+            )
+        )
+        self._preset_combos[-1].grid(row=0, column=3, sticky="w", padx=6, pady=2)
 
         ttk.Label(self.advanced_frame, text="Precisão:").grid(row=1, column=0, sticky="w")
-        ttk.Combobox(
-            self.advanced_frame,
-            textvariable=self.compute_type,
-            values=COMPUTE_OPTIONS,
-            state="readonly",
-            width=14,
-        ).grid(row=1, column=1, sticky="w", padx=6, pady=2)
+        self._preset_combos.append(
+            ttk.Combobox(
+                self.advanced_frame,
+                textvariable=self.compute_type,
+                values=COMPUTE_OPTIONS,
+                state="readonly",
+                width=14,
+            )
+        )
+        self._preset_combos[-1].grid(row=1, column=1, sticky="w", padx=6, pady=2)
 
         ttk.Label(self.advanced_frame, text="Beam:").grid(row=1, column=2, sticky="w")
-        ttk.Combobox(
-            self.advanced_frame,
-            textvariable=self.beam_size,
-            values=("1", "3", "5"),
-            state="readonly",
-            width=12,
-        ).grid(row=1, column=3, sticky="w", padx=6, pady=2)
+        self._preset_combos.append(
+            ttk.Combobox(
+                self.advanced_frame,
+                textvariable=self.beam_size,
+                values=("1", "3", "5"),
+                state="readonly",
+                width=12,
+            )
+        )
+        self._preset_combos[-1].grid(row=1, column=3, sticky="w", padx=6, pady=2)
 
         ttk.Label(self.advanced_frame, text="Idioma:").grid(row=2, column=0, sticky="w")
-        ttk.Combobox(
+        self._language_combo = ttk.Combobox(
             self.advanced_frame,
             textvariable=self.language,
             values=LANGUAGE_CHOICES,
             state="readonly",
             width=14,
-        ).grid(row=2, column=1, sticky="w", padx=6, pady=2)
+        )
+        self._language_combo.grid(row=2, column=1, sticky="w", padx=6, pady=2)
 
         cfg_frame.columnconfigure(1, weight=1)
 
@@ -156,13 +171,16 @@ class TranscriberApp(tk.Tk):
         )
         self.transcribe_btn.pack(pady=(0, 8))
 
-        self.progress_bar = ttk.Progressbar(
-            frame, mode="determinate", maximum=100, length=460
-        )
-        self.progress_bar.pack(fill=tk.X, pady=(0, 4))
+        progress_frame = ttk.LabelFrame(frame, text="Progresso", padding=8)
+        progress_frame.pack(fill=tk.X, pady=(0, 8))
 
-        ttk.Label(frame, textvariable=self.progress_text).pack(anchor="w")
-        ttk.Label(frame, textvariable=self.status, wraplength=500).pack(anchor="w", pady=(4, 0))
+        self.progress_bar = ttk.Progressbar(
+            progress_frame, mode="determinate", maximum=100, length=460
+        )
+        self.progress_bar.pack(fill=tk.X, pady=(0, 6))
+
+        ttk.Label(progress_frame, textvariable=self.progress_text).pack(anchor="w")
+        ttk.Label(frame, textvariable=self.status, wraplength=500).pack(anchor="w")
 
     def _build_single_tab(self, parent: ttk.Frame, padding: dict) -> None:
         ttk.Label(parent, text="Entrada:").grid(row=0, column=0, sticky="w")
@@ -271,6 +289,7 @@ class TranscriberApp(tk.Tk):
         label = self.quality_preset.get()
         key = self._quality_labels.get(label, "equilibrada")
         self._apply_quality_preset(key)
+        self._update_preset_fields_state(key)
 
     def _apply_quality_preset(self, preset_key: str) -> None:
         if preset_key == "personalizado":
@@ -281,9 +300,23 @@ class TranscriberApp(tk.Tk):
         self.compute_type.set(preset.compute_type)
         self.beam_size.set(str(preset.beam_size or 5))
 
-    def _build_settings(self) -> TranscriptionSettings:
+    def _update_preset_fields_state(self, preset_key: str) -> None:
+        is_custom = preset_key == "personalizado"
+        combo_state = "readonly" if is_custom else "disabled"
+        for combo in self._preset_combos:
+            combo.configure(state=combo_state)
+
+    def _get_preset_key(self) -> str:
         label = self.quality_preset.get()
-        preset_key = self._quality_labels.get(label, "personalizado")
+        return self._quality_labels.get(label, "equilibrada")
+
+    def _build_settings(self) -> TranscriptionSettings:
+        preset_key = self._get_preset_key()
+
+        if preset_key != "personalizado":
+            settings = TranscriptionSettings.from_quality_preset(preset_key)
+            settings.language = self.language.get()
+            return settings
 
         return TranscriptionSettings(
             model_size=self.model_size.get(),
@@ -291,7 +324,7 @@ class TranscriberApp(tk.Tk):
             memory_profile=self.memory_profile.get(),
             language=self.language.get(),
             beam_size=int(self.beam_size.get()),
-            quality_preset=preset_key,
+            quality_preset="personalizado",
         )
 
     def _update_config_status(self, settings: TranscriptionSettings) -> None:
@@ -318,31 +351,42 @@ class TranscriberApp(tk.Tk):
         if path:
             self.output_dir.set(path)
 
+    def _refresh_progress_ui(self) -> None:
+        self.progress_bar.update_idletasks()
+        self.update_idletasks()
+
+    def _show_progress_indeterminate(self, message: str) -> None:
+        self.progress_bar.stop()
+        self.progress_bar.configure(mode="indeterminate")
+        self.progress_bar.start(10)
+        self.progress_text.set(message)
+        self._refresh_progress_ui()
+
+    def _show_progress_percent(self, percent: int, message: str | None) -> None:
+        self.progress_bar.stop()
+        self.progress_bar.configure(mode="determinate")
+        self.progress_bar["value"] = percent
+        if message:
+            self.progress_text.set(message)
+        else:
+            self.progress_text.set(f"Transcrevendo… {percent}%")
+        self._refresh_progress_ui()
+
     def _reset_progress(self) -> None:
         self.progress_bar.stop()
         self.progress_bar.configure(mode="determinate")
         self.progress_bar["value"] = 0
         self.progress_text.set("")
+        self._refresh_progress_ui()
 
     def _report_progress(self, ratio: float, message: str | None) -> None:
         def update() -> None:
             if ratio < 0:
-                self.progress_bar.stop()
-                self.progress_bar.configure(mode="indeterminate")
-                self.progress_bar.start(12)
-                if message:
-                    self.progress_text.set(message)
+                self._show_progress_indeterminate(message or "Processando…")
                 return
 
-            self.progress_bar.stop()
-            self.progress_bar.configure(mode="determinate")
             percent = int(max(0.0, min(ratio, 1.0)) * 100)
-            self.progress_bar["value"] = percent
-
-            if message:
-                self.progress_text.set(message)
-            else:
-                self.progress_text.set(f"Transcrevendo… {percent}%")
+            self._show_progress_percent(percent, message)
 
         self.after(0, update)
 
@@ -352,11 +396,16 @@ class TranscriberApp(tk.Tk):
         self.quality_combo.configure(state="disabled" if busy else "readonly")
         self.files_notebook.configure(state="disabled" if busy else "normal")
         if busy:
-            self._reset_progress()
+            self._update_preset_fields_state(self._get_preset_key())
+            for combo in self._preset_combos:
+                combo.configure(state="disabled")
+            self._language_combo.configure(state="disabled")
         else:
             self.progress_bar.stop()
             self.progress_bar.configure(mode="determinate")
             self.quality_combo.configure(state="readonly")
+            self._language_combo.configure(state="readonly")
+            self._update_preset_fields_state(self._get_preset_key())
 
     def _start_transcription(self) -> None:
         if self._is_batch_mode():
@@ -384,7 +433,7 @@ class TranscriberApp(tk.Tk):
         settings = self._build_settings()
         self._set_busy(True)
         self._update_config_status(settings)
-        self.progress_text.set("Preparando…")
+        self._show_progress_indeterminate("Preparando…")
 
         thread = threading.Thread(
             target=self._run_single_transcription,
@@ -421,7 +470,7 @@ class TranscriberApp(tk.Tk):
         settings = self._build_settings()
         self._set_busy(True)
         self._update_config_status(settings)
-        self.progress_text.set("Preparando lote…")
+        self._show_progress_indeterminate("Preparando lote…")
 
         thread = threading.Thread(
             target=self._run_batch_transcription,
@@ -512,8 +561,7 @@ class TranscriberApp(tk.Tk):
 
     def _on_single_success(self, output_file: Path) -> None:
         self._set_busy(False)
-        self.progress_bar["value"] = 100
-        self.progress_text.set("Concluído (100%)")
+        self._show_progress_percent(100, "Concluído (100%)")
         self.status.set(f"Arquivo salvo em: {output_file}")
         messagebox.showinfo(
             "Transcrição concluída",
@@ -527,7 +575,7 @@ class TranscriberApp(tk.Tk):
         output_dir: Path,
     ) -> None:
         self._set_busy(False)
-        self.progress_bar["value"] = 100
+        self._show_progress_percent(100, None)
 
         ok_count = len(saved)
         err_count = len(errors)

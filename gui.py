@@ -15,12 +15,13 @@ class TranscriberApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("AudioTranscriber")
-        self.minsize(520, 280)
+        self.minsize(520, 310)
         self.resizable(True, False)
 
         self.input_path = tk.StringVar()
         self.output_dir = tk.StringVar()
         self.output_name = tk.StringVar()
+        self.include_timestamps = tk.BooleanVar(value=True)
         self.status = tk.StringVar(
             value=f"Modelo: {MODEL_SIZE} | Dispositivo: {DEVICE}"
         )
@@ -60,13 +61,19 @@ class TranscriberApp(tk.Tk):
             font=("TkDefaultFont", 8),
         ).grid(row=5, column=1, sticky="w", padx=12)
 
+        ttk.Checkbutton(
+            frame,
+            text="Incluir timestamp do áudio (início - fim de cada trecho)",
+            variable=self.include_timestamps,
+        ).grid(row=6, column=0, columnspan=2, sticky="w", **padding)
+
         self.transcribe_btn = ttk.Button(
             frame, text="Transcrever", command=self._start_transcription
         )
-        self.transcribe_btn.grid(row=6, column=0, columnspan=2, pady=(12, 4))
+        self.transcribe_btn.grid(row=7, column=0, columnspan=2, pady=(12, 4))
 
         ttk.Label(frame, textvariable=self.status, wraplength=480).grid(
-            row=7, column=0, columnspan=2, sticky="w"
+            row=8, column=0, columnspan=2, sticky="w"
         )
 
         frame.columnconfigure(0, weight=1)
@@ -112,7 +119,12 @@ class TranscriberApp(tk.Tk):
 
         thread = threading.Thread(
             target=self._run_transcription,
-            args=(input_path, Path(output_folder), output_name),
+            args=(
+                input_path,
+                Path(output_folder),
+                output_name,
+                self.include_timestamps.get(),
+            ),
             daemon=True,
         )
         thread.start()
@@ -122,9 +134,15 @@ class TranscriberApp(tk.Tk):
         input_path: Path,
         output_dir: Path,
         output_name: str | None,
+        include_timestamps: bool,
     ) -> None:
         try:
-            output_file = transcribe_to_file(input_path, output_dir, output_name)
+            output_file = transcribe_to_file(
+                input_path,
+                output_dir,
+                output_name,
+                include_timestamps=include_timestamps,
+            )
             self.after(
                 0,
                 lambda: self._on_success(output_file),

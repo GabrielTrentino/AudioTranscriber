@@ -46,9 +46,11 @@ def _format_timestamp(seconds: float) -> str:
     return f"{minutes:02d}:{secs:02d}"
 
 
-def format_segments(segments) -> str:
+def format_segments(segments, output_format: str | None = None) -> str:
     """Monta o texto com quebras de linha entre falas/segmentos do Whisper."""
-    if OUTPUT_FORMAT == "none":
+    fmt = (output_format or OUTPUT_FORMAT).lower()
+
+    if fmt == "none":
         return "".join(segment.text for segment in segments).strip()
 
     lines: list[str] = []
@@ -65,8 +67,10 @@ def format_segments(segments) -> str:
         ):
             lines.append("")
 
-        if OUTPUT_FORMAT == "time":
-            lines.append(f"[{_format_timestamp(segment.start)}] {text}")
+        if fmt == "time":
+            start = _format_timestamp(segment.start)
+            end = _format_timestamp(segment.end)
+            lines.append(f"[{start} - {end}] {text}")
         else:
             lines.append(text)
 
@@ -75,13 +79,23 @@ def format_segments(segments) -> str:
     return "\n".join(lines).strip()
 
 
-def transcribe_path(path: str | Path) -> str:
+def transcribe_path(
+    path: str | Path,
+    *,
+    include_timestamps: bool | None = None,
+) -> str:
+    output_format = None
+    if include_timestamps is True:
+        output_format = "time"
+    elif include_timestamps is False:
+        output_format = "line"
+
     segments, _ = get_model().transcribe(
         str(path),
         language=LANGUAGE,
         vad_filter=True,
     )
-    return format_segments(segments)
+    return format_segments(segments, output_format)
 
 
 def resolve_output_filename(name: str | None, input_path: Path) -> str:
@@ -113,6 +127,8 @@ def transcribe_to_file(
     input_path: Path,
     output_dir: Path,
     output_name: str | None = None,
+    *,
+    include_timestamps: bool = False,
 ) -> Path:
-    text = transcribe_path(input_path)
+    text = transcribe_path(input_path, include_timestamps=include_timestamps)
     return save_transcription(input_path, output_dir, text, output_name)

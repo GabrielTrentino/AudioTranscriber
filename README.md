@@ -19,7 +19,14 @@ pip install -r requirements.txt
 
 ### Interface gráfica (recomendado)
 
-Usa **tkinter** (biblioteca padrão do Python). Escolha o arquivo de entrada, a pasta de saída, o **nome do arquivo de saída** (opcional) e clique em **Transcrever**. Se o nome estiver vazio, usa o mesmo nome do áudio/vídeo com extensão `.txt`.
+Usa **tkinter** (biblioteca padrão do Python). Escolha o arquivo de entrada, a pasta de saída, o **nome do arquivo de saída** (opcional), marque **Incluir timestamp** se quiser o tempo de cada trecho no texto, e clique em **Transcrever**.
+
+Exemplo com timestamp:
+
+```
+[00:00:02 - 00:00:08] Bom dia, vamos começar a reunião.
+[00:00:15 - 00:00:22] O primeiro ponto é o orçamento.
+```
 
 ```bash
 python gui.py
@@ -36,7 +43,7 @@ Documentação interativa: http://127.0.0.1:8000/docs
 ## Uso
 
 ```bash
-curl -X POST "http://127.0.0.1:8000/transcribe" -F "file=@audio.mp3"
+curl -X POST "http://127.0.0.1:8000/transcribe?timestamps=true" -F "file=@audio.mp3"
 ```
 
 Resposta:
@@ -53,7 +60,7 @@ Resposta:
 | `WHISPER_DEVICE` | `cpu` | `cpu`, `cuda` ou `auto` |
 | `WHISPER_COMPUTE_TYPE` | `int8` | `int8`, `float16`, `float32` (GPU costuma usar `float16`) |
 | `WHISPER_LANGUAGE` | `pt` | Código do idioma |
-| `WHISPER_OUTPUT_FORMAT` | `line` | `line` (uma linha por trecho), `time` (com timestamp), `none` (texto corrido) |
+| `WHISPER_OUTPUT_FORMAT` | `line` | `line` (uma linha por trecho), `time` (com `[MM:SS - MM:SS]`), `none` (texto corrido) |
 | `WHISPER_PAUSE_GAP` | `1.5` | Segundos de pausa para inserir linha em branco entre parágrafos |
 
 Exemplo com GPU:

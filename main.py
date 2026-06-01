@@ -4,7 +4,7 @@ import shutil
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 
 from transcriber import DEVICE, MODEL_SIZE, transcribe_path
 
@@ -18,7 +18,10 @@ async def health():
 
 
 @app.post("/transcribe")
-async def transcribe(file: UploadFile = File(...)):
+async def transcribe(
+    file: UploadFile = File(...),
+    timestamps: bool = Query(False, description="Incluir [início - fim] em cada linha"),
+):
     if not file.filename:
         raise HTTPException(status_code=400, detail="Nome do arquivo ausente.")
 
@@ -30,8 +33,10 @@ async def transcribe(file: UploadFile = File(...)):
             shutil.copyfileobj(file.file, tmp)
             tmp_path = tmp.name
 
-        text = await asyncio.get_running_loop().run_in_executor(
-            executor, transcribe_path, tmp_path
+        loop = asyncio.get_running_loop()
+        text = await loop.run_in_executor(
+            executor,
+            lambda: transcribe_path(tmp_path, include_timestamps=timestamps),
         )
 
         return {"text": text}

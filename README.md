@@ -9,15 +9,20 @@ O projeto oferece:
 
 ## Estrutura do projeto
 
-| Arquivo / pasta | Função |
-|-----------------|--------|
-| `gui.py` | Interface tkinter (um arquivo, lote, progresso, cancelar) |
-| `main.py` | API REST (`POST /transcribe`, `GET /health`) |
-| `transcriber.py` | Whisper, presets, formatação e gravação do `.txt` |
-| `build_exe.ps1` | Gera o executável Windows com PyInstaller |
-| `requirements.txt` | Dependências de execução |
-| `requirements-build.txt` | PyInstaller (somente para build do `.exe`) |
-| `TODO.md` | Roadmap de arquitetura (melhorias futuras) |
+Código principal em `src/audiotranscriber/`. Detalhes da pasta dupla após o clone: [`docs/PROJECT_LAYOUT.md`](docs/PROJECT_LAYOUT.md).
+
+| Caminho | Função |
+|---------|--------|
+| `src/audiotranscriber/gui/` | Interface (views + controller + app) |
+| `src/audiotranscriber/services/` | `TranscriptionService` (transcrição e gravação) |
+| `src/audiotranscriber/core/` | Settings, `ModelManager`, formatter |
+| `src/audiotranscriber/config/` | `AppConfig` (env + `config.yaml` opcional) |
+| `src/audiotranscriber/api/` | FastAPI |
+| `gui.py` / `main.py` | Atalhos na raiz do repositório |
+| `transcriber.py` | Compatibilidade com imports antigos |
+| `config.yaml.example` | Exemplo de configuração local |
+| `build_exe.ps1` | Executável Windows (PyInstaller) |
+| `TODO.md` | Roadmap |
 
 ## Requisitos
 
@@ -31,7 +36,10 @@ cd AudioTranscriber
 python -m venv .venv
 .\.venv\Scripts\activate
 pip install -r requirements.txt
+pip install -e .
 ```
+
+Opcional: copie `config.yaml.example` para `config.yaml` para ajustar device, idioma padrão, etc.
 
 ## Interface gráfica (recomendado)
 

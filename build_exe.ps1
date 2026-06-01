@@ -17,12 +17,16 @@ if (-not (Test-Path $python)) {
     --windowed `
     --name AudioTranscriber `
     --onedir `
+    --paths src `
     --collect-all faster_whisper `
     --collect-all ctranslate2 `
     --collect-all onnxruntime `
     --hidden-import av `
     --hidden-import huggingface_hub `
     --hidden-import tokenizers `
+    --hidden-import audiotranscriber `
+    --hidden-import audiotranscriber.gui.app `
+    --hidden-import audiotranscriber.core.ffmpeg `
     gui.py
 
 $dist = Join-Path $PSScriptRoot "dist\AudioTranscriber"

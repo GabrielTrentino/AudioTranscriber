@@ -7,12 +7,12 @@ Prioridade: **P0** crítico → **P2** desejável.
 
 ## P0 — Estrutura e manutenibilidade
 
-- [ ] Reorganizar em pacote (`src/audiotranscriber/`): `core/`, `services/`, `api/`, `gui/`, `config/`
-- [ ] Quebrar `gui.py` em views + controller (sem lógica Whisper na UI)
-- [ ] Extrair `TranscriptionService` (modelo, transcrição, gravação)
-- [ ] Substituir singleton global por `ModelManager` com cache e lock (API concorrente)
-- [ ] Configuração unificada (`AppConfig`: env + opcional `config.yaml`)
-- [ ] Documentar ou aplanar pasta `AudioTranscriber/AudioTranscriber/` após clone
+- [x] Reorganizar em pacote (`src/audiotranscriber/`): `core/`, `services/`, `api/`, `gui/`, `config/`
+- [x] Quebrar `gui.py` em views + controller (sem lógica Whisper na UI)
+- [x] Extrair `TranscriptionService` (modelo, transcrição, gravação)
+- [x] Substituir singleton global por `ModelManager` com cache e lock (API concorrente)
+- [x] Configuração unificada (`AppConfig`: env + opcional `config.yaml`)
+- [x] Documentar ou aplanar pasta `AudioTranscriber/AudioTranscriber/` após clone
 
 ## P1 — Paridade, robustez e UX
 

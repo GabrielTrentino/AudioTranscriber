@@ -218,13 +218,13 @@ def transcribe_path(
         output_format = "line"
 
     if on_progress:
-        on_progress(0.0, f"Carregando modelo {cfg.model_size}…")
+        on_progress(-1.0, f"Carregando modelo {cfg.model_size}…")
 
     model = get_model(cfg)
     memory = resolve_memory_settings(cfg.memory_profile, beam_size=cfg.beam_size)
 
     if on_progress:
-        on_progress(0.0, "Transcrevendo…")
+        on_progress(-1.0, "Transcrevendo…")
 
     transcribe_kwargs: dict = {
         "language": _resolve_language(cfg.language),

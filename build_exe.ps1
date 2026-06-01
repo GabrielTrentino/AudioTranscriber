@@ -27,6 +27,7 @@ if (-not (Test-Path $python)) {
     --hidden-import audiotranscriber `
     --hidden-import audiotranscriber.gui.app `
     --hidden-import audiotranscriber.core.ffmpeg `
+    --hidden-import audiotranscriber.core.startup_checks `
     gui.py
 
 $dist = Join-Path $PSScriptRoot "dist\AudioTranscriber"

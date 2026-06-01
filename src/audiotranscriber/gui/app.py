@@ -8,6 +8,11 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from audiotranscriber.core.exceptions import TranscriptionCancelled
+from audiotranscriber.core.startup_checks import (
+    format_issues,
+    has_blocking_errors,
+    run_startup_checks,
+)
 from audiotranscriber.core.settings import TranscriptionSettings
 from audiotranscriber.gui.constants import AUDIO_VIDEO_TYPES, QUALITY_CHOICES
 from audiotranscriber.gui.controller import QualityFormState, TranscriptionController
@@ -631,6 +636,20 @@ class TranscriberApp(tk.Tk):
 
 
 def main() -> None:
+    issues = run_startup_checks()
+    if issues:
+        body = format_issues(issues)
+        if has_blocking_errors(issues):
+            root = tk.Tk()
+            root.withdraw()
+            messagebox.showerror("AudioTranscriber — dependências", body)
+            root.destroy()
+            raise SystemExit(1)
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showwarning("AudioTranscriber — avisos", body)
+        root.destroy()
+
     app = TranscriberApp()
     app.mainloop()
 

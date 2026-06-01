@@ -47,7 +47,17 @@ python -m audiotranscriber batch a.mp3 b.mp4 -o ./saida --format json
 python -m audiotranscriber queue jobs.json a.mp3 b.mp4 --run
 ```
 
-Formatos: `txt`, `srt`, `vtt`, `json`. Diarização: `pip install "audiotranscriber[diarization]"` e `--diarize`.
+Formatos: `txt`, `srt`, `vtt`, `json`.
+
+### Identificar falantes (experimental)
+
+- GUI: marque **Identificar falantes (experimental — pyannote)** antes de transcrever.
+- CLI: `--diarize`
+- Teste isolado: `python scripts/test_pyannote_diarization.py audio.mp3 --transcribe`
+- Instalação: `pip install "audiotranscriber[diarization]"`, aceite os termos em [speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1), defina `HF_TOKEN`.
+- Modelos baixam **uma vez** (cache Hugging Face); depois funciona offline.
+- Rótulos genéricos (`SPEAKER_00`, …), não o nome do narrador. Para voltar ao fluxo sem diarização, desmarque a opção.
+- Backend legado WhisperX: `set DIARIZATION_BACKEND=whisperx` e `pip install "audiotranscriber[diarization-whisperx]"`.
 
 ## Interface gráfica (recomendado)
 

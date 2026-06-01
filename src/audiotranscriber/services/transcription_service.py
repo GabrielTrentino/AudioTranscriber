@@ -6,10 +6,10 @@ from pathlib import Path
 from audiotranscriber.core.exceptions import TranscriptionCancelled
 from audiotranscriber.core.exporters import format_export
 from audiotranscriber.core.formatter import format_segments
-from audiotranscriber.services.diarization import (
-    assign_speakers,
+from audiotranscriber.services.diarization import format_segments_with_speakers
+from audiotranscriber.services.diarization_backend import (
+    assign_speaker_labels,
     diarization_install_hint,
-    format_segments_with_speakers,
     is_diarization_available,
 )
 from audiotranscriber.core.memory import resolve_memory_settings
@@ -132,7 +132,7 @@ class TranscriptionService:
             if on_progress:
                 on_progress(0.99, "Diarizando falantes…")
             lang = _resolve_language(cfg.language)
-            labeled = assign_speakers(
+            labeled = assign_speaker_labels(
                 Path(path),
                 collected,
                 device=self.device,

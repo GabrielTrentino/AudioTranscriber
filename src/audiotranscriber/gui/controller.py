@@ -63,6 +63,7 @@ class TranscriptionController:
         output_name: str | None,
         settings: TranscriptionSettings,
         include_timestamps: bool,
+        identify_speakers: bool = False,
         *,
         on_progress: Callable[[float, str | None], None],
         is_cancelled: Callable[[], bool],
@@ -70,6 +71,8 @@ class TranscriptionController:
     ) -> Path:
         on_progress(0.0, "Preparando arquivo… 0%")
         log(f"transcribe {input_path.name} -> {output_dir}")
+        if identify_speakers:
+            log("diarização pyannote ativada")
         try:
             output_file = self._service.transcribe_to_file(
                 input_path,
@@ -77,6 +80,7 @@ class TranscriptionController:
                 output_name,
                 settings=settings,
                 include_timestamps=include_timestamps,
+                diarize=identify_speakers,
                 on_progress=on_progress,
                 is_cancelled=is_cancelled,
             )
@@ -96,6 +100,7 @@ class TranscriptionController:
         use_input_folder: bool,
         settings: TranscriptionSettings,
         include_timestamps: bool,
+        identify_speakers: bool = False,
         *,
         on_progress: Callable[[float, str | None], None],
         is_cancelled: Callable[[], bool],
@@ -142,6 +147,7 @@ class TranscriptionController:
                     output_name=None,
                     settings=settings,
                     include_timestamps=include_timestamps,
+                    diarize=identify_speakers,
                     on_progress=file_progress,
                     is_cancelled=is_cancelled,
                 )

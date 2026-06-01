@@ -30,6 +30,7 @@ class TranscriberApp(tk.Tk):
         self.output_dir = tk.StringVar()
         self.output_name = tk.StringVar()
         self.include_timestamps = tk.BooleanVar(value=True)
+        self.identify_speakers = tk.BooleanVar(value=False)
         self.quality_preset = tk.StringVar()
         self.model_size = tk.StringVar(value="base")
         self.memory_profile = tk.StringVar(value="balanced")
@@ -330,6 +331,24 @@ class TranscriberApp(tk.Tk):
             self.cancel_btn.configure(state=tk.DISABLED)
             self._apply_progress(0.0, "Cancelando…")
 
+    def _speaker_id_ready(self) -> bool:
+        if not self.identify_speakers.get():
+            return True
+        from audiotranscriber.services.diarization_backend import (
+            diarization_install_hint,
+            is_diarization_available,
+        )
+
+        if is_diarization_available():
+            return True
+        messagebox.showwarning(
+            "Identificar falantes",
+            "Recurso experimental indisponível.\n\n"
+            f"{diarization_install_hint()}\n\n"
+            "Desmarque a opção ou instale as dependências e tente de novo.",
+        )
+        return False
+
     def _begin_transcription_job(self) -> None:
         self._job_id += 1
         self._cancel_event.clear()
@@ -348,6 +367,7 @@ class TranscriberApp(tk.Tk):
             getattr(self, "output_name_entry", None),
             getattr(self, "batch_output_entry", None),
             self.batch_listbox,
+            getattr(self, "identify_speakers_btn", None),
         ):
             if widget is not None:
                 widget.configure(state=state)
@@ -412,11 +432,16 @@ class TranscriberApp(tk.Tk):
             self._log(f"Entrada: {input_path}")
             self._log(f"Saída: {output_path} (pasta do arquivo de entrada)")
 
+        if not self._speaker_id_ready():
+            return
+
         try:
             settings = self._build_settings()
+            identify = self.identify_speakers.get()
             self._log(
                 f"Config: preset={settings.quality_preset}, "
-                f"modelo={settings.model_size}, idioma={settings.language}"
+                f"modelo={settings.model_size}, idioma={settings.language}, "
+                f"falantes={identify}"
             )
             self._begin_transcription_job()
             self._apply_progress(0.0, "Iniciando transcrição… 0%")
@@ -429,6 +454,7 @@ class TranscriberApp(tk.Tk):
                     output_name,
                     settings,
                     self.include_timestamps.get(),
+                    identify,
                 ),
                 daemon=True,
             )
@@ -484,7 +510,12 @@ class TranscriberApp(tk.Tk):
                 f"Lote: {len(paths)} arquivo(s) -> pasta de cada arquivo de entrada"
             )
 
+        if not self._speaker_id_ready():
+            return
+
         settings = self._build_settings()
+        identify = self.identify_speakers.get()
+        self._log(f"Config lote: falantes={identify}")
         self._begin_transcription_job()
         self._apply_progress(0.0, f"Preparando lote… 0% ({len(paths)} arquivo(s))")
 
@@ -496,6 +527,7 @@ class TranscriberApp(tk.Tk):
                 use_input_folder,
                 settings,
                 self.include_timestamps.get(),
+                identify,
             ),
             daemon=True,
         )
@@ -508,6 +540,7 @@ class TranscriberApp(tk.Tk):
         output_name: str | None,
         settings: TranscriptionSettings,
         include_timestamps: bool,
+        identify_speakers: bool,
     ) -> None:
         self._start_heartbeat(
             f"Carregando modelo {settings.model_size} e transcrevendo"
@@ -523,6 +556,7 @@ class TranscriberApp(tk.Tk):
                 output_name,
                 settings,
                 include_timestamps,
+                identify_speakers,
                 on_progress=self._report_progress,
                 is_cancelled=self._is_cancelled,
                 log=log_line,
@@ -543,6 +577,7 @@ class TranscriberApp(tk.Tk):
         use_input_folder: bool,
         settings: TranscriptionSettings,
         include_timestamps: bool,
+        identify_speakers: bool,
     ) -> None:
         self._start_heartbeat("Processando lote")
 
@@ -556,6 +591,7 @@ class TranscriberApp(tk.Tk):
                 use_input_folder,
                 settings,
                 include_timestamps,
+                identify_speakers,
                 on_progress=self._report_progress,
                 is_cancelled=self._is_cancelled,
                 log=log_line,

@@ -231,8 +231,18 @@ def build_quality_section(app, frame: ttk.Frame, padding: dict) -> None:
 
     cfg_frame.columnconfigure(1, weight=1)
 
+    options_frame = ttk.Frame(frame)
+    options_frame.pack(fill=tk.X, pady=(0, 8))
+
     ttk.Checkbutton(
-        frame,
+        options_frame,
         text="Incluir timestamp (início - fim de cada trecho)",
         variable=app.include_timestamps,
-    ).pack(anchor="w", pady=(0, 8))
+    ).pack(anchor="w")
+
+    app.identify_speakers_btn = ttk.Checkbutton(
+        options_frame,
+        text="Identificar falantes (experimental — pyannote)",
+        variable=app.identify_speakers,
+    )
+    app.identify_speakers_btn.pack(anchor="w", pady=(4, 0))

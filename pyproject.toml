@@ -19,6 +19,7 @@ dependencies = [
 build = ["pyinstaller>=6.0"]
 
 [project.scripts]
+audiotranscriber = "audiotranscriber.cli:main"
 audiotranscriber-gui = "audiotranscriber.gui.app:main"
 audiotranscriber-api = "audiotranscriber.api.app:run"
 

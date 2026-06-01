@@ -19,7 +19,12 @@ pip install -r requirements.txt
 
 ### Interface gráfica (recomendado)
 
-Usa **tkinter** (biblioteca padrão do Python). Escolha o arquivo de entrada, a pasta de saída, o **nome do arquivo de saída** (opcional), marque **Incluir timestamp** se quiser o tempo de cada trecho no texto, e clique em **Transcrever**.
+Usa **tkinter** (biblioteca padrão do Python).
+
+- Aba **Um arquivo**: entrada, pasta de saída e nome opcional do `.txt`.
+- Aba **Vários arquivos**: lista de áudios/vídeos; cada um vira `{nome-original}.txt` na pasta de saída.
+
+Marque **Incluir timestamp** se quiser o tempo de cada trecho no texto e clique em **Transcrever**.
 
 Exemplo com timestamp:
 

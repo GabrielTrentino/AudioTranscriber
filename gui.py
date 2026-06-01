@@ -31,7 +31,7 @@ class TranscriberApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("AudioTranscriber")
-        self.minsize(540, 540)
+        self.minsize(540, 580)
         self.resizable(True, True)
 
         self.input_path = tk.StringVar()
@@ -47,6 +47,8 @@ class TranscriberApp(tk.Tk):
         self.progress_text = tk.StringVar(value="")
         self.status = tk.StringVar(value=f"Dispositivo: {DEVICE}")
 
+        self._batch_paths: list[str] = []
+
         self._quality_labels = {label: key for label, key in QUALITY_CHOICES}
         self._quality_keys = {key: label for label, key in QUALITY_CHOICES}
 
@@ -60,35 +62,18 @@ class TranscriberApp(tk.Tk):
         frame.pack(fill=tk.BOTH, expand=True)
 
         files_frame = ttk.LabelFrame(frame, text="Arquivos", padding=8)
-        files_frame.pack(fill=tk.X, pady=(0, 8))
+        files_frame.pack(fill=tk.BOTH, expand=False, pady=(0, 8))
 
-        ttk.Label(files_frame, text="Entrada:").grid(row=0, column=0, sticky="w")
-        ttk.Entry(files_frame, textvariable=self.input_path, width=48).grid(
-            row=1, column=0, sticky="ew", **padding
-        )
-        ttk.Button(files_frame, text="Escolher…", command=self._pick_input).grid(
-            row=1, column=1, **padding
-        )
+        self.files_notebook = ttk.Notebook(files_frame)
+        self.files_notebook.pack(fill=tk.BOTH, expand=True)
 
-        ttk.Label(files_frame, text="Pasta de saída:").grid(row=2, column=0, sticky="w")
-        ttk.Entry(files_frame, textvariable=self.output_dir, width=48).grid(
-            row=3, column=0, sticky="ew", **padding
-        )
-        ttk.Button(files_frame, text="Escolher…", command=self._pick_output).grid(
-            row=3, column=1, **padding
-        )
+        single_tab = ttk.Frame(self.files_notebook, padding=4)
+        batch_tab = ttk.Frame(self.files_notebook, padding=4)
+        self.files_notebook.add(single_tab, text="Um arquivo")
+        self.files_notebook.add(batch_tab, text="Vários arquivos")
 
-        ttk.Label(files_frame, text="Nome do .txt:").grid(row=4, column=0, sticky="w")
-        ttk.Entry(files_frame, textvariable=self.output_name, width=48).grid(
-            row=5, column=0, sticky="ew", **padding
-        )
-        ttk.Label(
-            files_frame,
-            text="(vazio = mesmo nome do áudio)",
-            font=("TkDefaultFont", 8),
-        ).grid(row=5, column=1, sticky="w")
-
-        files_frame.columnconfigure(0, weight=1)
+        self._build_single_tab(single_tab, padding)
+        self._build_batch_tab(batch_tab, padding)
 
         cfg_frame = ttk.LabelFrame(frame, text="Qualidade da transcrição", padding=8)
         cfg_frame.pack(fill=tk.X, pady=(0, 8))
@@ -179,6 +164,109 @@ class TranscriberApp(tk.Tk):
         ttk.Label(frame, textvariable=self.progress_text).pack(anchor="w")
         ttk.Label(frame, textvariable=self.status, wraplength=500).pack(anchor="w", pady=(4, 0))
 
+    def _build_single_tab(self, parent: ttk.Frame, padding: dict) -> None:
+        ttk.Label(parent, text="Entrada:").grid(row=0, column=0, sticky="w")
+        ttk.Entry(parent, textvariable=self.input_path, width=48).grid(
+            row=1, column=0, sticky="ew", **padding
+        )
+        ttk.Button(parent, text="Escolher…", command=self._pick_input).grid(
+            row=1, column=1, **padding
+        )
+
+        ttk.Label(parent, text="Pasta de saída:").grid(row=2, column=0, sticky="w")
+        ttk.Entry(parent, textvariable=self.output_dir, width=48).grid(
+            row=3, column=0, sticky="ew", **padding
+        )
+        ttk.Button(parent, text="Escolher…", command=self._pick_output).grid(
+            row=3, column=1, **padding
+        )
+
+        ttk.Label(parent, text="Nome do .txt:").grid(row=4, column=0, sticky="w")
+        ttk.Entry(parent, textvariable=self.output_name, width=48).grid(
+            row=5, column=0, sticky="ew", **padding
+        )
+        ttk.Label(
+            parent,
+            text="(vazio = mesmo nome do áudio)",
+            font=("TkDefaultFont", 8),
+        ).grid(row=5, column=1, sticky="w")
+
+        parent.columnconfigure(0, weight=1)
+
+    def _build_batch_tab(self, parent: ttk.Frame, padding: dict) -> None:
+        list_frame = ttk.Frame(parent)
+        list_frame.grid(row=0, column=0, columnspan=2, sticky="nsew", **padding)
+
+        scrollbar = ttk.Scrollbar(list_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self.batch_listbox = tk.Listbox(
+            list_frame,
+            height=7,
+            selectmode=tk.EXTENDED,
+            yscrollcommand=scrollbar.set,
+        )
+        self.batch_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=self.batch_listbox.yview)
+
+        btn_frame = ttk.Frame(parent)
+        btn_frame.grid(row=1, column=0, columnspan=2, sticky="w", **padding)
+
+        ttk.Button(btn_frame, text="Adicionar arquivos…", command=self._batch_add_files).pack(
+            side=tk.LEFT, padx=(0, 6)
+        )
+        ttk.Button(btn_frame, text="Remover selecionados", command=self._batch_remove_selected).pack(
+            side=tk.LEFT, padx=(0, 6)
+        )
+        ttk.Button(btn_frame, text="Limpar lista", command=self._batch_clear).pack(side=tk.LEFT)
+
+        ttk.Label(parent, text="Pasta de saída:").grid(row=2, column=0, sticky="w")
+        ttk.Entry(parent, textvariable=self.output_dir, width=48).grid(
+            row=3, column=0, sticky="ew", **padding
+        )
+        ttk.Button(parent, text="Escolher…", command=self._pick_output).grid(
+            row=3, column=1, **padding
+        )
+
+        ttk.Label(
+            parent,
+            text="Cada arquivo gera um .txt com o mesmo nome (ex.: audio.mp3 → audio.txt).",
+            font=("TkDefaultFont", 8),
+            wraplength=420,
+        ).grid(row=4, column=0, columnspan=2, sticky="w", **padding)
+
+        parent.columnconfigure(0, weight=1)
+
+    def _is_batch_mode(self) -> bool:
+        return self.files_notebook.index(self.files_notebook.select()) == 1
+
+    def _batch_add_files(self) -> None:
+        paths = filedialog.askopenfilenames(
+            title="Selecionar áudios ou vídeos",
+            filetypes=AUDIO_VIDEO_TYPES,
+        )
+        if not paths:
+            return
+
+        existing = set(self._batch_paths)
+        for path in paths:
+            if path not in existing:
+                existing.add(path)
+                self._batch_paths.append(path)
+                self.batch_listbox.insert(tk.END, Path(path).name)
+
+    def _batch_remove_selected(self) -> None:
+        selection = list(self.batch_listbox.curselection())
+        if not selection:
+            return
+        for index in reversed(selection):
+            self.batch_listbox.delete(index)
+            del self._batch_paths[index]
+
+    def _batch_clear(self) -> None:
+        self.batch_listbox.delete(0, tk.END)
+        self._batch_paths.clear()
+
     def _on_quality_selected(self, _event=None) -> None:
         label = self.quality_preset.get()
         key = self._quality_labels.get(label, "equilibrada")
@@ -262,6 +350,7 @@ class TranscriberApp(tk.Tk):
         state = tk.DISABLED if busy else tk.NORMAL
         self.transcribe_btn.configure(state=state)
         self.quality_combo.configure(state="disabled" if busy else "readonly")
+        self.files_notebook.configure(state="disabled" if busy else "normal")
         if busy:
             self._reset_progress()
         else:
@@ -270,6 +359,12 @@ class TranscriberApp(tk.Tk):
             self.quality_combo.configure(state="readonly")
 
     def _start_transcription(self) -> None:
+        if self._is_batch_mode():
+            self._start_batch_transcription()
+        else:
+            self._start_single_transcription()
+
+    def _start_single_transcription(self) -> None:
         input_file = self.input_path.get().strip()
         output_folder = self.output_dir.get().strip()
         output_name = self.output_name.get().strip() or None
@@ -292,7 +387,7 @@ class TranscriberApp(tk.Tk):
         self.progress_text.set("Preparando…")
 
         thread = threading.Thread(
-            target=self._run_transcription,
+            target=self._run_single_transcription,
             args=(
                 input_path,
                 Path(output_folder),
@@ -304,7 +399,43 @@ class TranscriberApp(tk.Tk):
         )
         thread.start()
 
-    def _run_transcription(
+    def _start_batch_transcription(self) -> None:
+        output_folder = self.output_dir.get().strip()
+
+        if not self._batch_paths:
+            messagebox.showwarning("Atenção", "Adicione pelo menos um arquivo à lista.")
+            return
+        if not output_folder:
+            messagebox.showwarning("Atenção", "Selecione uma pasta de saída.")
+            return
+
+        paths = [Path(p) for p in self._batch_paths]
+        missing = [p.name for p in paths if not p.is_file()]
+        if missing:
+            messagebox.showerror(
+                "Erro",
+                "Arquivos não encontrados:\n" + "\n".join(missing[:10]),
+            )
+            return
+
+        settings = self._build_settings()
+        self._set_busy(True)
+        self._update_config_status(settings)
+        self.progress_text.set("Preparando lote…")
+
+        thread = threading.Thread(
+            target=self._run_batch_transcription,
+            args=(
+                paths,
+                Path(output_folder),
+                settings,
+                self.include_timestamps.get(),
+            ),
+            daemon=True,
+        )
+        thread.start()
+
+    def _run_single_transcription(
         self,
         input_path: Path,
         output_dir: Path,
@@ -321,11 +452,65 @@ class TranscriberApp(tk.Tk):
                 include_timestamps=include_timestamps,
                 on_progress=self._report_progress,
             )
-            self.after(0, lambda: self._on_success(output_file))
+            self.after(0, lambda: self._on_single_success(output_file))
         except Exception as exc:
             self.after(0, lambda: self._on_error(str(exc)))
 
-    def _on_success(self, output_file: Path) -> None:
+    def _run_batch_transcription(
+        self,
+        paths: list[Path],
+        output_dir: Path,
+        settings: TranscriptionSettings,
+        include_timestamps: bool,
+    ) -> None:
+        total = len(paths)
+        saved: list[Path] = []
+        errors: list[str] = []
+
+        try:
+            for index, input_path in enumerate(paths):
+                file_label = input_path.name
+
+                def file_progress(
+                    ratio: float,
+                    message: str | None,
+                    *,
+                    idx=index,
+                    label=file_label,
+                ) -> None:
+                    overall = (idx + max(0.0, min(ratio, 1.0))) / total
+                    if message and "%" in message:
+                        detail = message
+                    elif ratio >= 0:
+                        detail = f"{int(ratio * 100)}%"
+                    else:
+                        detail = message or "…"
+                    self._report_progress(
+                        overall,
+                        f"Arquivo {idx + 1}/{total}: {label} — {detail}",
+                    )
+
+                try:
+                    output_file = transcribe_to_file(
+                        input_path,
+                        output_dir,
+                        output_name=None,
+                        settings=settings,
+                        include_timestamps=include_timestamps,
+                        on_progress=file_progress,
+                    )
+                    saved.append(output_file)
+                except Exception as exc:
+                    errors.append(f"{file_label}: {exc}")
+
+            self.after(
+                0,
+                lambda: self._on_batch_finished(saved, errors, output_dir),
+            )
+        except Exception as exc:
+            self.after(0, lambda: self._on_error(str(exc)))
+
+    def _on_single_success(self, output_file: Path) -> None:
         self._set_busy(False)
         self.progress_bar["value"] = 100
         self.progress_text.set("Concluído (100%)")
@@ -333,6 +518,37 @@ class TranscriberApp(tk.Tk):
         messagebox.showinfo(
             "Transcrição concluída",
             f"Texto salvo em:\n{output_file}",
+        )
+
+    def _on_batch_finished(
+        self,
+        saved: list[Path],
+        errors: list[str],
+        output_dir: Path,
+    ) -> None:
+        self._set_busy(False)
+        self.progress_bar["value"] = 100
+
+        ok_count = len(saved)
+        err_count = len(errors)
+
+        if err_count == 0:
+            self.progress_text.set(f"Concluído — {ok_count} arquivo(s)")
+            self.status.set(f"Pasta de saída: {output_dir}")
+            messagebox.showinfo(
+                "Lote concluído",
+                f"{ok_count} transcrição(ões) salva(s) em:\n{output_dir}",
+            )
+            return
+
+        self.progress_text.set(f"Concluído — {ok_count} ok, {err_count} erro(s)")
+        self.status.set(f"Pasta: {output_dir}")
+        detail = "\n".join(errors[:8])
+        if len(errors) > 8:
+            detail += f"\n… e mais {len(errors) - 8} erro(s)"
+        messagebox.showwarning(
+            "Lote finalizado com erros",
+            f"Sucesso: {ok_count}\nFalhas: {err_count}\n\n{detail}",
         )
 
     def _on_error(self, detail: str) -> None:

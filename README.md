@@ -49,13 +49,18 @@ python -m audiotranscriber queue jobs.json a.mp3 b.mp4 --run
 
 Formatos: `txt`, `srt`, `vtt`, `json`.
 
-### Identificar falantes (opcional)
+### Identificar falantes (experimental, só CLI)
 
-- **Local, sem Hugging Face** — agrupa trechos por voz (MFCC + scikit-learn); rótulos `SPEAKER_00`, `SPEAKER_01`, …
-- GUI: marque **Identificar falantes (local, sem Hugging Face)** ou CLI `--diarize`
-- Instalação: `pip install "audiotranscriber[diarization]"` (só na versão Python; o `.exe` não inclui este extra)
-- Teste: `python scripts/test_pyannote_diarization.py audio.mp3 --transcribe`
-- Qualidade inferior a pyannote em áudio difícil; backends alternativos: `DIARIZATION_BACKEND=pyannote` ou `whisperx` (exigem HF/modelos extras)
+A opção na **interface gráfica está desativada** até integrarmos um modelo de diarização confiável (ver [Próximos passos](#próximos-passos)).
+
+Na linha de comando ainda é possível testar:
+
+```powershell
+pip install "audiotranscriber[diarization]"
+python -m audiotranscriber transcribe audio.mp3 --diarize
+```
+
+Código legado em `src/audiotranscriber/services/diarization_*.py` e `DIARIZATION_BACKEND` (local / pyannote / whisperx).
 
 ## Interface gráfica (recomendado)
 
@@ -257,6 +262,23 @@ Distribua a **pasta inteira** `dist\AudioTranscriber\`. **Não** execute nada em
 | `lista de lote vazia` | Aba **Vários arquivos** → Adicionar arquivos |
 
 A pasta de saída é **opcional**. Se ficar em branco, o app usa a pasta do arquivo de entrada (em lote: a pasta de cada arquivo).
+
+## Próximos passos
+
+### Legendas com quem está falando (diarização)
+
+Objetivo: saída tipo `[Maria] [00:12 - 00:18] texto` ou SRT/VTT com nome/rótulo estável por pessoa, sem trocar o mesmo falante por vários `SPEAKER_XX`.
+
+| Etapa | O que fazer |
+|-------|-------------|
+| **1. Escolher modelo** | Avaliar e fixar um backend principal: [pyannote/speaker-diarization](https://huggingface.co/pyannote/speaker-diarization-3.1) (melhor qualidade, HF + termos de uso), [pyannote community](https://huggingface.co/pyannote/speaker-diarization-community-1) (já esboçado em `diarization_pyannote.py`), ou WhisperX diarization. Manter MFCC local só como fallback offline. |
+| **2. Critérios de aceite** | Testar com 1 narrador, 2 vozes distintas e sobreposição leve; medir % de segmentos com falante errado e estabilidade do rótulo ao longo do áudio. |
+| **3. Alinhar ao Whisper** | Garantir que cada segmento `start/end/text` do faster-whisper receba o falante dominante no intervalo (já esboçado em `assign_speaker_labels`). |
+| **4. Exportação** | Estender `srt` / `vtt` / `json` com campo `speaker` ou prefixo na legenda; GUI com checkbox de novo após qualidade aceitável. |
+| **5. Empacotamento** | Decidir se o `.exe` inclui diarização (tamanho + licenças) ou permanece extra pip / download sob demanda. |
+| **6. Nomes reais (opcional)** | Depois da diarização: cadastro “SPEAKER_00 → Ana” na UI ou arquivo sidecar `.speakers.json`. |
+
+Referência de código ao reativar a UI: `gui/views/layout.py` (checkbox), `gui/app.py` (`_speaker_id_ready`, thread args), `gui/controller.py` (`diarize=`).
 
 ## Roadmap
 

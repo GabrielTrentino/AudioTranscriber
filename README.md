@@ -41,8 +41,12 @@ python gui.py
 
 ### Abas de arquivos
 
-- **Um arquivo** — entrada, pasta de saída e nome opcional do `.txt` (vazio = mesmo nome do áudio).
-- **Vários arquivos** — lista de áudios/vídeos; cada um gera `{nome-original}.txt` na pasta de saída.
+- **Um arquivo** — entrada, pasta de saída (opcional) e nome opcional do `.txt`.
+  - Pasta de saída **vazia** → o `.txt` é salvo na **mesma pasta do arquivo de entrada**.
+  - Nome do `.txt` **vazio** → mesmo nome do áudio (ex.: `video.mp4` → `video.txt`).
+- **Vários arquivos** — lista de áudios/vídeos; cada um gera `{nome-original}.txt`.
+  - Pasta de saída **vazia** → cada `.txt` na pasta do respectivo arquivo de entrada.
+  - Pasta de saída **preenchida** → todos os `.txt` vão para essa pasta.
 
 ### Qualidade da transcrição
 
@@ -220,8 +224,9 @@ Distribua a **pasta inteira** `dist\AudioTranscriber\`. **Não** execute nada em
 | Mensagem no log | O que fazer |
 |-----------------|-------------|
 | `nenhum arquivo de entrada` | Aba **Um arquivo** → Escolher entrada |
-| `pasta de saída não selecionada` | Escolher pasta de saída (compartilhada entre as abas) |
 | `lista de lote vazia` | Aba **Vários arquivos** → Adicionar arquivos |
+
+A pasta de saída é **opcional**. Se ficar em branco, o app usa a pasta do arquivo de entrada (em lote: a pasta de cada arquivo).
 
 ## Roadmap
 

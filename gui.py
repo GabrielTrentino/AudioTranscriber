@@ -229,8 +229,9 @@ class TranscriberApp(tk.Tk):
         self.output_name_entry.grid(row=5, column=0, sticky="ew", **padding)
         ttk.Label(
             parent,
-            text="(vazio = mesmo nome do áudio)",
+            text="(vazio = mesmo nome do áudio; pasta vazia = pasta do arquivo)",
             font=("TkDefaultFont", 8),
+            wraplength=200,
         ).grid(row=5, column=1, sticky="w")
 
         parent.columnconfigure(0, weight=1)
@@ -273,7 +274,10 @@ class TranscriberApp(tk.Tk):
 
         ttk.Label(
             parent,
-            text="Cada arquivo gera um .txt com o mesmo nome (ex.: audio.mp3 → audio.txt).",
+            text=(
+                "Cada arquivo gera um .txt com o mesmo nome (ex.: audio.mp3 → audio.txt). "
+                "Pasta de saída vazia = salvar na pasta de cada arquivo."
+            ),
             font=("TkDefaultFont", 8),
             wraplength=420,
         ).grid(row=4, column=0, columnspan=2, sticky="w", **padding)
@@ -421,6 +425,12 @@ class TranscriberApp(tk.Tk):
             f"Beam: {settings.beam_size} | "
             f"Idioma: {settings.language}"
         )
+
+    def _output_dir_for_input(self, input_path: Path) -> Path:
+        explicit = self.output_dir.get().strip()
+        if explicit:
+            return Path(explicit)
+        return input_path.resolve().parent
 
     def _pick_input(self) -> None:
         path = filedialog.askopenfilename(
@@ -609,10 +619,6 @@ class TranscriberApp(tk.Tk):
             self._log("Abortado: nenhum arquivo de entrada selecionado")
             messagebox.showwarning("Atenção", "Selecione um arquivo de entrada.")
             return
-        if not output_folder:
-            self._log("Abortado: pasta de saída não selecionada")
-            messagebox.showwarning("Atenção", "Selecione uma pasta de saída.")
-            return
 
         input_path = Path(input_file)
         if not input_path.is_file():
@@ -620,8 +626,13 @@ class TranscriberApp(tk.Tk):
             messagebox.showerror("Erro", "Arquivo de entrada não encontrado.")
             return
 
-        self._log(f"Entrada: {input_path}")
-        self._log(f"Saída: {output_folder}")
+        output_path = self._output_dir_for_input(input_path)
+        if output_folder:
+            self._log(f"Entrada: {input_path}")
+            self._log(f"Saída: {output_path}")
+        else:
+            self._log(f"Entrada: {input_path}")
+            self._log(f"Saída: {output_path} (pasta do arquivo de entrada)")
 
         try:
             settings = self._build_settings()
@@ -636,7 +647,7 @@ class TranscriberApp(tk.Tk):
                 target=self._run_single_transcription,
                 args=(
                     input_path,
-                    Path(output_folder),
+                    output_path,
                     output_name,
                     settings,
                     self.include_timestamps.get(),
@@ -661,10 +672,6 @@ class TranscriberApp(tk.Tk):
             self._log("Abortado: lista de lote vazia")
             messagebox.showwarning("Atenção", "Adicione pelo menos um arquivo à lista.")
             return
-        if not output_folder:
-            self._log("Abortado: pasta de saída não selecionada (lote)")
-            messagebox.showwarning("Atenção", "Selecione uma pasta de saída.")
-            return
 
         paths = [Path(p) for p in self._batch_paths]
         missing = [p.name for p in paths if not p.is_file()]
@@ -676,7 +683,13 @@ class TranscriberApp(tk.Tk):
             )
             return
 
-        self._log(f"Lote: {len(paths)} arquivo(s) -> {output_folder}")
+        use_input_folder = not output_folder
+        if output_folder:
+            self._log(f"Lote: {len(paths)} arquivo(s) -> {output_folder}")
+        else:
+            self._log(
+                f"Lote: {len(paths)} arquivo(s) -> pasta de cada arquivo de entrada"
+            )
 
         settings = self._build_settings()
         self._begin_transcription_job()
@@ -686,7 +699,8 @@ class TranscriberApp(tk.Tk):
             target=self._run_batch_transcription,
             args=(
                 paths,
-                Path(output_folder),
+                Path(output_folder) if output_folder else None,
+                use_input_folder,
                 settings,
                 self.include_timestamps.get(),
             ),
@@ -734,7 +748,8 @@ class TranscriberApp(tk.Tk):
     def _run_batch_transcription(
         self,
         paths: list[Path],
-        output_dir: Path,
+        output_dir: Path | None,
+        use_input_folder: bool,
         settings: TranscriptionSettings,
         include_timestamps: bool,
     ) -> None:
@@ -772,9 +787,14 @@ class TranscriberApp(tk.Tk):
                     )
 
                 try:
+                    target_dir = (
+                        input_path.resolve().parent
+                        if use_input_folder
+                        else output_dir
+                    )
                     output_file = transcribe_to_file(
                         input_path,
-                        output_dir,
+                        target_dir,
                         output_name=None,
                         settings=settings,
                         include_timestamps=include_timestamps,
@@ -788,13 +808,18 @@ class TranscriberApp(tk.Tk):
                 except Exception as exc:
                     errors.append(f"{file_label}: {exc}")
 
+            summary_dir = (
+                output_dir
+                if output_dir is not None
+                else (paths[0].resolve().parent if paths else Path("."))
+            )
             if cancelled:
                 self._schedule_on_main(
-                    self._on_batch_cancelled, saved, errors, output_dir
+                    self._on_batch_cancelled, saved, errors, summary_dir
                 )
             else:
                 self._schedule_on_main(
-                    self._on_batch_finished, saved, errors, output_dir
+                    self._on_batch_finished, saved, errors, summary_dir
                 )
         except Exception as exc:
             detail = f"{exc}\n\n{traceback.format_exc()}"

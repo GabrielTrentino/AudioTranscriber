@@ -86,6 +86,15 @@ O executável fica em:
 
 Distribua a **pasta inteira** `dist\AudioTranscriber\` (várias DLLs e bibliotecas vêm junto).
 
+**Não execute** arquivos dentro de `build\` — essa pasta é temporária do PyInstaller e causa erro de `python3xx.dll`.
+
+### Erro ao abrir o .exe (`python311.dll` / `LoadLibrary`)
+
+1. Use apenas `dist\AudioTranscriber\AudioTranscriber.exe` (não a pasta `build\`).
+2. Copie a pasta `dist\AudioTranscriber\` inteira para o destino (não mova só o `.exe`).
+3. Rebuild após atualizar o projeto: `.\build_exe.ps1`
+4. Instale o [Visual C++ Redistributable x64](https://aka.ms/vs/17/release/vc_redist.x64.exe) se o erro persistir.
+
 ### O que esperar
 
 | Item | Detalhe |

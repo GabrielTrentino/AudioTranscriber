@@ -1,69 +1,115 @@
 # AudioTranscriber
 
-API em FastAPI para transcrever áudios e vídeos em texto, usando [faster-whisper](https://github.com/SYSTRAN/faster-whisper).
+Transcrição de áudio e vídeo para texto com [faster-whisper](https://github.com/SYSTRAN/faster-whisper).
+
+O projeto oferece:
+
+- **Interface gráfica (GUI)** — `gui.py`, recomendado para uso no dia a dia e para o `.exe` no Windows.
+- **API HTTP** — `main.py` (FastAPI), para integração com outros sistemas.
+
+## Estrutura do projeto
+
+| Arquivo / pasta | Função |
+|-----------------|--------|
+| `gui.py` | Interface tkinter (um arquivo, lote, progresso, cancelar) |
+| `main.py` | API REST (`POST /transcribe`, `GET /health`) |
+| `transcriber.py` | Whisper, presets, formatação e gravação do `.txt` |
+| `build_exe.ps1` | Gera o executável Windows com PyInstaller |
+| `requirements.txt` | Dependências de execução |
+| `requirements-build.txt` | PyInstaller (somente para build do `.exe`) |
+| `TODO.md` | Roadmap de arquitetura (melhorias futuras) |
 
 ## Requisitos
 
-- Python 3.10+
-- [FFmpeg](https://ffmpeg.org/) no PATH (necessário para mp3, mp4, mkv e outros formatos)
+- Python 3.10+ (o ambiente de desenvolvimento atual usa 3.14)
+- [FFmpeg](https://ffmpeg.org/) no PATH, **ou** `ffmpeg.exe` na mesma pasta do `.exe` / do projeto
 
 ## Instalação
 
-```bash
+```powershell
+cd AudioTranscriber
 python -m venv .venv
-.venv\Scripts\activate
+.\.venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-## Executar
+## Interface gráfica (recomendado)
 
-### Interface gráfica (recomendado)
-
-Usa **tkinter** (biblioteca padrão do Python).
-
-- Aba **Um arquivo**: entrada, pasta de saída e nome opcional do `.txt`.
-- Aba **Vários arquivos**: lista de áudios/vídeos; cada um vira `{nome-original}.txt` na pasta de saída.
-
-Marque **Incluir timestamp** se quiser o tempo de cada trecho no texto e clique em **Transcrever**.
-
-Exemplo com timestamp:
-
+```powershell
+python gui.py
 ```
+
+### Abas de arquivos
+
+- **Um arquivo** — entrada, pasta de saída e nome opcional do `.txt` (vazio = mesmo nome do áudio).
+- **Vários arquivos** — lista de áudios/vídeos; cada um gera `{nome-original}.txt` na pasta de saída.
+
+### Qualidade da transcrição
+
+| Preset | Modelo | Memória | Observação |
+|--------|--------|---------|------------|
+| **Rápida** | `base`, beam 1 | `low` | Menos RAM, mais rápido |
+| **Equilibrada** | `base`, beam 5 | `balanced` | Recomendado |
+| **Alta qualidade** | `small`, beam 5 | `high` | Melhor texto, mais lento |
+| **Personalizado** | Você define modelo, memória, precisão (`int8`/`float16`), beam e idioma | — | Só neste preset os campos avançados ficam editáveis |
+
+O idioma pode ser `pt`, `en`, `es`, etc., ou **`auto`** para detecção automática.
+
+### Timestamps
+
+Marque **Incluir timestamp** para gravar início e fim de cada trecho:
+
+```text
 [00:00:02 - 00:00:08] Bom dia, vamos começar a reunião.
 [00:00:15 - 00:00:22] O primeiro ponto é o orçamento.
 ```
 
-Durante a transcrição, a barra de progresso avança conforme os trechos do áudio são processados (com base na duração total).
+### Progresso e cancelamento
 
-### Qualidade (escolha do usuário)
+- A seção **Progresso** (acima das opções de qualidade) mostra a barra e o status da execução (`0%`, carregamento do modelo, `Transcrevendo… X%`).
+- O botão **Cancelar** interrompe a transcrição atual (cooperativo: pode levar alguns segundos durante o carregamento do modelo).
+- Atualizações da interface usam fila na thread principal, para funcionar de forma confiável no Windows.
 
-Na seção **Qualidade da transcrição**:
+### Diagnóstico: `last_run.log`
 
-| Preset | Modelo | Uso |
-|--------|--------|-----|
-| **Rápida** | `base`, beam 1 | Menos RAM, mais rápido, mais erros |
-| **Equilibrada** | `base`, beam 5 | Recomendado para a maioria |
-| **Alta qualidade** | `small`, beam 5 | Melhor texto, mais lento e RAM |
-| **Personalizado** | Você escolhe modelo, memória, precisão (`int8`/`float16`), beam e idioma |
+A cada clique em **Transcrever**, o app recria um log com **apenas a última execução**:
 
-Idioma `auto` deixa o Whisper detectar automaticamente.
+| Como você roda | Caminho típico do log |
+|----------------|------------------------|
+| `python gui.py` | `AudioTranscriber\last_run.log` (pasta do `gui.py`) |
+| `.exe` em `dist` | `dist\AudioTranscriber\last_run.log` (ao lado do `.exe`) |
+| Fallback | `%USERPROFILE%\AudioTranscriber\last_run.log` |
 
-```bash
-python gui.py
+Exemplo de conteúdo:
+
+```text
+=== AudioTranscriber — última execução (2026-05-31 23:16:11) ===
+Botão Transcrever clicado
+Modo: um arquivo
+Entrada: C:\...\video.mp4
+Saída: C:\...\Downloads
+Config: preset=equilibrada, modelo=base, idioma=pt
+job 1: validação OK, preparando UI
+job 1: iniciando worker
+job 1: thread de transcrição iniciada
+job 1: transcribe video.mp4 -> C:\...\Downloads
+job 1: done C:\...\Downloads\video.txt
 ```
 
-### API HTTP
+Se o log parar antes de `iniciando worker`, veja a seção [Solução de problemas](#solução-de-problemas).
 
-```bash
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+## API HTTP
+
+```powershell
+uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 Documentação interativa: http://127.0.0.1:8000/docs
 
-## Uso
+### Exemplo
 
 ```bash
-curl -X POST "http://127.0.0.1:8000/transcribe?timestamps=true&quality=alta&language=pt" -F "file=@audio.mp3"
+curl -X POST "http://127.0.0.1:8000/transcribe?timestamps=true&quality=equilibrada&language=pt" -F "file=@audio.mp3"
 ```
 
 Resposta:
@@ -72,99 +118,115 @@ Resposta:
 {"text": "texto transcrito..."}
 ```
 
-## Variáveis de ambiente
-
-| Variável | Padrão | Descrição |
-|----------|--------|-----------|
-| `WHISPER_QUALITY_PRESET` | — | `rapida`, `equilibrada` ou `alta` (sobrescreve modelo/beam na API/CLI) |
-| `WHISPER_MODEL` | `base` | Modelo (`tiny`, `base`, `small`, `medium`, `large-v3`, …) |
-| `WHISPER_DEVICE` | `cpu` | `cpu`, `cuda` ou `auto` |
-| `WHISPER_COMPUTE_TYPE` | `int8` | `int8`, `float16`, `float32` (GPU costuma usar `float16`) |
-| `WHISPER_LANGUAGE` | `pt` | Código do idioma |
-| `WHISPER_OUTPUT_FORMAT` | `line` | `line` (uma linha por trecho), `time` (com `[MM:SS - MM:SS]`), `none` (texto corrido) |
-| `WHISPER_PAUSE_GAP` | `1.5` | Segundos de pausa para inserir linha em branco entre parágrafos |
-
-### Uso de memória
-
-Não há um limite fixo em MB (depende do modelo e do áudio). Use o perfil ou ajuste fino:
-
-| Variável | Padrão | Descrição |
-|----------|--------|-----------|
-| `WHISPER_MEMORY_PROFILE` | `balanced` | `low` (menos RAM), `balanced`, `high` (mais qualidade, mais RAM) |
-| `WHISPER_CPU_THREADS` | (do perfil) | Threads na CPU (`0` = automático) |
-| `WHISPER_NUM_WORKERS` | `1` | Workers paralelos (mais = mais RAM) |
-| `WHISPER_CHUNK_LENGTH` | (do perfil) | Segundos por bloco de áudio (menor = menos pico de RAM em arquivos longos) |
-| `WHISPER_BEAM_SIZE` | (do perfil) | `1` usa menos memória; `5` é mais preciso |
-
-Perfil **`low`** (PC com pouca RAM):
-
-```powershell
-set WHISPER_MEMORY_PROFILE=low
-set WHISPER_MODEL=tiny
-set WHISPER_COMPUTE_TYPE=int8
-python gui.py
-```
-
-Também ajudam: modelo menor (`tiny`/`base`) e `WHISPER_COMPUTE_TYPE=int8`.
-
-Exemplo com GPU:
-
-```bash
-set WHISPER_DEVICE=cuda
-set WHISPER_COMPUTE_TYPE=float16
-uvicorn main:app --host 0.0.0.0 --port 8000
-```
-
-## Endpoint
+### Endpoints
 
 - `GET /health` — status da API
 - `POST /transcribe` — envia um arquivo (`file`) de áudio ou vídeo
 
-## Gerar executável (.exe) no Windows
+Parâmetros úteis em `POST /transcribe`: `timestamps`, `quality` (`rapida` / `equilibrada` / `alta`), `language`, `model`.
 
-A forma mais comum na comunidade Python é o **[PyInstaller](https://pyinstaller.org/)**. O alvo recomendado é a **interface gráfica** (`gui.py`), não a API.
+## Variáveis de ambiente
 
-### Passos
+| Variável | Padrão | Descrição |
+|----------|--------|-----------|
+| `WHISPER_QUALITY_PRESET` | — | `rapida`, `equilibrada` ou `alta` |
+| `WHISPER_MODEL` | `base` | `tiny`, `base`, `small`, `medium`, `large-v3`, … |
+| `WHISPER_DEVICE` | `cpu` | `cpu`, `cuda` ou `auto` |
+| `WHISPER_COMPUTE_TYPE` | `int8` | `int8`, `float16`, `float32` |
+| `WHISPER_LANGUAGE` | `pt` | Código do idioma |
+| `WHISPER_OUTPUT_FORMAT` | `line` | `line`, `time`, `none` |
+| `WHISPER_PAUSE_GAP` | `1.5` | Pausa (s) para linha em branco entre trechos |
+| `WHISPER_MEMORY_PROFILE` | `balanced` | `low`, `balanced`, `high` |
+| `WHISPER_CPU_THREADS` | (do perfil) | Threads CPU (`0` = automático) |
+| `WHISPER_NUM_WORKERS` | `1` | Workers paralelos |
+| `WHISPER_CHUNK_LENGTH` | (do perfil) | Tamanho do bloco em segundos |
+| `WHISPER_BEAM_SIZE` | (do perfil) | `1` = menos RAM; `5` = mais preciso |
+
+### PC com pouca RAM
 
 ```powershell
-cd AudioTranscriber
-.venv\Scripts\activate
+$env:WHISPER_MEMORY_PROFILE = "low"
+$env:WHISPER_MODEL = "tiny"
+$env:WHISPER_COMPUTE_TYPE = "int8"
+python gui.py
+```
+
+### GPU (exemplo)
+
+```powershell
+$env:WHISPER_DEVICE = "cuda"
+$env:WHISPER_COMPUTE_TYPE = "float16"
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+## Gerar executável (.exe) no Windows
+
+Build com **[PyInstaller](https://pyinstaller.org/)** via `build_exe.ps1` (modo `--onedir`, sem UPX).
+
+```powershell
+.\.venv\Scripts\activate
 pip install -r requirements.txt -r requirements-build.txt
 .\build_exe.ps1
 ```
 
-O executável fica em:
+Saída:
 
 `dist\AudioTranscriber\AudioTranscriber.exe`
 
-Distribua a **pasta inteira** `dist\AudioTranscriber\` (várias DLLs e bibliotecas vêm junto).
-
-**Não execute** arquivos dentro de `build\` — essa pasta é temporária do PyInstaller e causa erro de `python3xx.dll`.
-
-### Erro ao abrir o .exe (`python311.dll` / `LoadLibrary`)
-
-1. Use apenas `dist\AudioTranscriber\AudioTranscriber.exe` (não a pasta `build\`).
-2. Copie a pasta `dist\AudioTranscriber\` inteira para o destino (não mova só o `.exe`).
-3. Rebuild após atualizar o projeto: `.\build_exe.ps1`
-4. Instale o [Visual C++ Redistributable x64](https://aka.ms/vs/17/release/vc_redist.x64.exe) se o erro persistir.
-
-### O que esperar
+Distribua a **pasta inteira** `dist\AudioTranscriber\`. **Não** execute nada em `build\` (pasta temporária do PyInstaller).
 
 | Item | Detalhe |
 |------|---------|
 | Tamanho | Centenas de MB (Whisper + ONNX + dependências) |
-| Primeira execução | Baixa o modelo Whisper (internet uma vez) |
-| FFmpeg | Instale no PATH **ou** copie `ffmpeg.exe` para a mesma pasta do `.exe` |
-| API FastAPI | Não é empacotada por padrão; o foco do `.exe` é a GUI |
-
-### Alternativas
-
-- **--onefile** (um único `.exe`): mais lento ao abrir e mais frágil com libs de ML; `--onedir` é mais estável.
-- **[Nuitka](https://nuitka.net/)**: compila para binário nativo; build mais complexo.
-- **Instalador** (Inno Setup, WiX): embrulha a pasta `dist` para o usuário final.
+| Primeira execução | Download do modelo Whisper (internet uma vez) |
+| FFmpeg | PATH do sistema **ou** `ffmpeg.exe` ao lado do `.exe` |
+| Log | `last_run.log` na pasta do executável |
+| API | Não vai no `.exe` por padrão; foco na GUI |
 
 ### Uso offline do .exe
 
 1. Rode uma vez **com internet** para baixar o modelo.
-2. (Opcional) Copie a pasta de cache do Hugging Face para a máquina alvo.
-3. Coloque `ffmpeg.exe` ao lado do executável se o PC não tiver FFmpeg no PATH.
+2. (Opcional) Copie o cache do Hugging Face para a máquina alvo.
+3. Coloque `ffmpeg.exe` na pasta `dist\AudioTranscriber\` se não houver FFmpeg no PATH.
+
+## Solução de problemas
+
+### Transcrição não inicia / log para em "Saída"
+
+**Causa corrigida:** o `ttk.Notebook` (abas Um arquivo / Vários) **não suporta** `state="disabled"` no Windows. Isso gerava `TclError: unknown option "-state"` e interrompia o fluxo antes de iniciar o worker.
+
+**Solução:** use a versão atual do projeto (campos desabilitados individualmente, sem desabilitar o notebook). Confirme no `last_run.log` as linhas `iniciando worker` e `thread de transcrição iniciada`.
+
+### Barra de progresso parada em 0%
+
+- Na **primeira execução**, pode ficar vários minutos em "Carregando modelo…" (download + carga) — é normal.
+- O heartbeat no log/UI mostra `(aguarde, 2s)`, `(aguarde, 4s)`, etc.
+- Se nunca passar de 0% mesmo em áudio curto já com modelo em cache, abra `last_run.log` e verifique erros.
+
+### Erro ao abrir o `.exe` (`python3xx.dll` / `LoadLibrary`)
+
+1. Use só `dist\AudioTranscriber\AudioTranscriber.exe` (não `build\`).
+2. Copie a pasta `dist\AudioTranscriber\` inteira.
+3. Rebuild: `.\build_exe.ps1`
+4. Instale o [Visual C++ Redistributable x64](https://aka.ms/vs/17/release/vc_redist.x64.exe) se necessário.
+
+### FFmpeg / vídeo sem áudio
+
+- Instale FFmpeg ou copie `ffmpeg.exe` para a pasta do app.
+- Erros aparecem no `last_run.log` e em uma caixa de diálogo (com caminho do log).
+
+### Abortado no log (sem transcrição)
+
+| Mensagem no log | O que fazer |
+|-----------------|-------------|
+| `nenhum arquivo de entrada` | Aba **Um arquivo** → Escolher entrada |
+| `pasta de saída não selecionada` | Escolher pasta de saída (compartilhada entre as abas) |
+| `lista de lote vazia` | Aba **Vários arquivos** → Adicionar arquivos |
+
+## Roadmap
+
+Melhorias planejadas estão em [`TODO.md`](TODO.md) (pacote modular, testes, CI, mais formatos de saída, etc.).
+
+## Licença
+
+Ver [`LICENSE`](LICENSE).

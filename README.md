@@ -39,7 +39,17 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-Opcional: copie `config.yaml.example` para `config.yaml` para ajustar device, idioma padrão, etc.
+Opcional: copie `config.yaml.example` para `config.yaml` para ajustar device, idioma padrão, API, etc.
+
+## Linha de comando (CLI)
+
+```powershell
+python -m audiotranscriber transcribe audio.mp3 -o ./saida --format srt --quality equilibrada
+python -m audiotranscriber batch a.mp3 b.mp4 -o ./saida --format json
+python -m audiotranscriber queue jobs.json a.mp3 b.mp4 --run
+```
+
+Formatos: `txt`, `srt`, `vtt`, `json`. Diarização: `pip install "audiotranscriber[diarization]"` e `--diarize`.
 
 ## Interface gráfica (recomendado)
 
@@ -112,22 +122,27 @@ Se o log parar antes de `iniciando worker`, veja a seção [Solução de problem
 
 ## API HTTP
 
+Por padrão escuta em **127.0.0.1** (apenas máquina local):
+
 ```powershell
-uvicorn main:app --reload --host 127.0.0.1 --port 8000
+audiotranscriber-api
+# ou: uvicorn audiotranscriber.api.app:app --host 127.0.0.1 --port 8000
 ```
 
-Documentação interativa: http://127.0.0.1:8000/docs
+Documentação: http://127.0.0.1:8000/docs
+
+Segurança opcional via `API_KEY` (header `X-Api-Key`). CORS: `CORS_ORIGINS`. Rate limit: `API_RATE_LIMIT` / `API_RATE_WINDOW`.
+
+### Docker (API headless)
+
+```powershell
+docker compose up --build
+```
 
 ### Exemplo
 
 ```bash
-curl -X POST "http://127.0.0.1:8000/transcribe?timestamps=true&quality=equilibrada&language=pt" -F "file=@audio.mp3"
-```
-
-Resposta:
-
-```json
-{"text": "texto transcrito..."}
+curl -X POST "http://127.0.0.1:8000/transcribe?timestamps=true&quality=equilibrada&export_format=srt" -F "file=@audio.mp3"
 ```
 
 ### Endpoints
@@ -135,7 +150,7 @@ Resposta:
 - `GET /health` — status da API
 - `POST /transcribe` — envia um arquivo (`file`) de áudio ou vídeo
 
-Parâmetros úteis em `POST /transcribe`: `timestamps`, `quality` (`rapida` / `equilibrada` / `alta`), `language`, `model`.
+Parâmetros: `timestamps`, `quality`, `language`, `model`, `export_format` (`txt` / `srt` / `vtt` / `json`).
 
 ## Variáveis de ambiente
 

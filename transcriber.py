@@ -1,7 +1,22 @@
 import os
+import sys
 from pathlib import Path
 
 from faster_whisper import WhisperModel
+
+
+def _setup_ffmpeg_path() -> None:
+    """Permite colocar ffmpeg.exe na pasta do .exe (distribuição empacotada)."""
+    if getattr(sys, "frozen", False):
+        app_dir = Path(sys.executable).resolve().parent
+    else:
+        app_dir = Path(__file__).resolve().parent
+
+    if (app_dir / "ffmpeg.exe").is_file():
+        os.environ["PATH"] = str(app_dir) + os.pathsep + os.environ.get("PATH", "")
+
+
+_setup_ffmpeg_path()
 
 MODEL_SIZE = os.getenv("WHISPER_MODEL", "base")
 DEVICE = os.getenv("WHISPER_DEVICE", "cpu")

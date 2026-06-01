@@ -66,3 +66,43 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 
 - `GET /health` — status da API
 - `POST /transcribe` — envia um arquivo (`file`) de áudio ou vídeo
+
+## Gerar executável (.exe) no Windows
+
+A forma mais comum na comunidade Python é o **[PyInstaller](https://pyinstaller.org/)**. O alvo recomendado é a **interface gráfica** (`gui.py`), não a API.
+
+### Passos
+
+```powershell
+cd AudioTranscriber
+.venv\Scripts\activate
+pip install -r requirements.txt -r requirements-build.txt
+.\build_exe.ps1
+```
+
+O executável fica em:
+
+`dist\AudioTranscriber\AudioTranscriber.exe`
+
+Distribua a **pasta inteira** `dist\AudioTranscriber\` (várias DLLs e bibliotecas vêm junto).
+
+### O que esperar
+
+| Item | Detalhe |
+|------|---------|
+| Tamanho | Centenas de MB (Whisper + ONNX + dependências) |
+| Primeira execução | Baixa o modelo Whisper (internet uma vez) |
+| FFmpeg | Instale no PATH **ou** copie `ffmpeg.exe` para a mesma pasta do `.exe` |
+| API FastAPI | Não é empacotada por padrão; o foco do `.exe` é a GUI |
+
+### Alternativas
+
+- **--onefile** (um único `.exe`): mais lento ao abrir e mais frágil com libs de ML; `--onedir` é mais estável.
+- **[Nuitka](https://nuitka.net/)**: compila para binário nativo; build mais complexo.
+- **Instalador** (Inno Setup, WiX): embrulha a pasta `dist` para o usuário final.
+
+### Uso offline do .exe
+
+1. Rode uma vez **com internet** para baixar o modelo.
+2. (Opcional) Copie a pasta de cache do Hugging Face para a máquina alvo.
+3. Coloque `ffmpeg.exe` ao lado do executável se o PC não tiver FFmpeg no PATH.

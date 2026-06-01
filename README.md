@@ -30,6 +30,19 @@ Exemplo com timestamp:
 
 Durante a transcrição, a barra de progresso avança conforme os trechos do áudio são processados (com base na duração total).
 
+### Qualidade (escolha do usuário)
+
+Na seção **Qualidade da transcrição**:
+
+| Preset | Modelo | Uso |
+|--------|--------|-----|
+| **Rápida** | `base`, beam 1 | Menos RAM, mais rápido, mais erros |
+| **Equilibrada** | `base`, beam 5 | Recomendado para a maioria |
+| **Alta qualidade** | `small`, beam 5 | Melhor texto, mais lento e RAM |
+| **Personalizado** | Você escolhe modelo, memória, precisão (`int8`/`float16`), beam e idioma |
+
+Idioma `auto` deixa o Whisper detectar automaticamente.
+
 ```bash
 python gui.py
 ```
@@ -45,7 +58,7 @@ Documentação interativa: http://127.0.0.1:8000/docs
 ## Uso
 
 ```bash
-curl -X POST "http://127.0.0.1:8000/transcribe?timestamps=true" -F "file=@audio.mp3"
+curl -X POST "http://127.0.0.1:8000/transcribe?timestamps=true&quality=alta&language=pt" -F "file=@audio.mp3"
 ```
 
 Resposta:
@@ -58,6 +71,7 @@ Resposta:
 
 | Variável | Padrão | Descrição |
 |----------|--------|-----------|
+| `WHISPER_QUALITY_PRESET` | — | `rapida`, `equilibrada` ou `alta` (sobrescreve modelo/beam na API/CLI) |
 | `WHISPER_MODEL` | `base` | Modelo (`tiny`, `base`, `small`, `medium`, `large-v3`, …) |
 | `WHISPER_DEVICE` | `cpu` | `cpu`, `cuda` ou `auto` |
 | `WHISPER_COMPUTE_TYPE` | `int8` | `int8`, `float16`, `float32` (GPU costuma usar `float16`) |

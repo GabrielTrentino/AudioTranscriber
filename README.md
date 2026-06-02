@@ -22,12 +22,91 @@ Código em `src/audiotranscriber/`. Raiz enxuta; detalhes: [`docs/PROJECT_LAYOUT
 | `docker/` | API headless (Dockerfile, compose) |
 | `scripts/` | Build PyInstaller, shim legado opcional |
 
-## Requisitos
+## Guia passo a passo (do zero ao executável)
 
-- Python 3.10+ (o ambiente de desenvolvimento atual usa 3.14)
-- [FFmpeg](https://ffmpeg.org/) no PATH, **ou** `ffmpeg.exe` na mesma pasta do `.exe` / do projeto
+### 1. Clonar o repositório
 
-## Instalação
+```powershell
+git clone https://github.com/GabrielTrentino/AudioTranscriber.git
+cd AudioTranscriber
+```
+
+> Se o clone criar pasta aninhada `AudioTranscriber\AudioTranscriber\`, entre na pasta interna onde estão `pyproject.toml` e `gui.py`.
+
+### 2. Criar e ativar o ambiente virtual (venv)
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\activate
+```
+
+No Linux/macOS: `source .venv/bin/activate`
+
+### 3. Instalar dependências
+
+```powershell
+pip install -r requirements.txt
+pip install -e .
+```
+
+**Opcional — identificar falantes** (pyannote + PyTorch, download maior):
+
+```powershell
+pip install "audiotranscriber[diarization]"
+```
+
+Para gerar o `.exe`, instale também: `pip install -r scripts/requirements-build.txt`
+
+### 4. FFmpeg
+
+Instale [FFmpeg](https://ffmpeg.org/) e deixe no PATH, **ou** copie `ffmpeg.exe` na pasta do projeto / do `.exe`.
+
+Windows (winget): `winget install Gyan.FFmpeg`
+
+### 5. Conta Hugging Face (só se for usar “Identificar falantes”)
+
+1. Crie uma conta em https://huggingface.co/join  
+2. Aceite os termos do modelo: https://huggingface.co/pyannote/speaker-diarization-community-1  
+3. Gere um token de **leitura** em https://huggingface.co/settings/tokens  
+   - Token **Classic Read**, **ou** fine-grained com acesso a repositórios gated públicos  
+4. Crie o arquivo local (não vai para o git):
+
+```powershell
+mkdir secrets
+copy secrets\.env.example secrets\.env
+```
+
+Edite `secrets\.env` e coloque:
+
+```
+HF_TOKEN=hf_seu_token_aqui
+```
+
+A pasta `secrets/` está no `.gitignore` — o token **nunca** deve ser commitado.
+
+### 6. Rodar a interface gráfica
+
+```powershell
+python gui.py
+```
+
+Marque **Incluir [início - fim]** e/ou **Identificar falantes** conforme necessário. Na primeira execução com falantes, o modelo pyannote é baixado (internet).
+
+### 7. Gerar o executável Windows (`.exe`)
+
+Com o venv ativo e `[diarization]` instalado se quiser falantes no desktop:
+
+```powershell
+.\build_exe.ps1
+```
+
+Saída: `dist\AudioTranscriber\AudioTranscriber.exe` — distribua a **pasta inteira** `dist\AudioTranscriber\`.
+
+O script copia `ffmpeg.exe` (se estiver no PATH) e `secrets\.env` (se existir) para ao lado do `.exe`.
+
+---
+
+## Instalação (referência rápida)
 
 ```powershell
 cd AudioTranscriber
@@ -39,6 +118,11 @@ pip install -e .
 
 Opcional: copie `config/config.yaml.example` para `config.yaml` na raiz (device, idioma, API, etc.).
 
+## Requisitos
+
+- Python 3.10+ (o ambiente de desenvolvimento atual usa 3.14)
+- [FFmpeg](https://ffmpeg.org/) no PATH, **ou** `ffmpeg.exe` na mesma pasta do `.exe` / do projeto
+
 ## Linha de comando (CLI)
 
 ```powershell
@@ -49,18 +133,51 @@ python -m audiotranscriber queue jobs.json a.mp3 b.mp4 --run
 
 Formatos: `txt`, `srt`, `vtt`, `json`.
 
-### Identificar falantes (experimental, só CLI)
+### Identificar falantes (pyannote / Hugging Face)
 
-A opção na **interface gráfica está desativada** até integrarmos um modelo de diarização confiável (ver [Próximos passos](#próximos-passos)).
+Usa o modelo [speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) para rotular interlocutores (`SPEAKER_00`, `SPEAKER_01`, …) nos trechos transcritos.
 
-Na linha de comando ainda é possível testar:
+**1. Instalar o extra**
 
 ```powershell
 pip install "audiotranscriber[diarization]"
-python -m audiotranscriber transcribe audio.mp3 --diarize
 ```
 
-Código legado em `src/audiotranscriber/services/diarization_*.py` e `DIARIZATION_BACKEND` (local / pyannote / whisperx).
+**2. Hugging Face**
+
+1. Crie um token de leitura em https://huggingface.co/settings/tokens  
+2. Aceite os termos do modelo: https://huggingface.co/pyannote/speaker-diarization-community-1  
+3. Defina o token no ambiente **ou** em `secrets/.env` na raiz do projeto (não versionado):
+
+```powershell
+$env:HF_TOKEN = "hf_..."
+```
+
+Ou crie `secrets/.env` a partir de `secrets/.env.example`.
+
+**3. Usar**
+
+- **GUI:** marque **Identificar falantes** (venv ou `.exe` com `secrets\.env` ao lado do executável).  
+- **CLI:** `--diarize`
+
+```powershell
+python -m audiotranscriber transcribe audio.mp3 --diarize --timestamps
+```
+
+Saída exemplo: `[SPEAKER_00] [00:12 - 00:18] texto do trecho`
+
+**Variáveis opcionais**
+
+| Variável | Descrição |
+|----------|-----------|
+| `DIARIZATION_BACKEND` | `pyannote` (padrão), `whisperx` ou `local` |
+| `DIARIZATION_NUM_SPEAKERS` | Número exato de falantes, se souber |
+| `DIARIZATION_MIN_SPEAKERS` / `DIARIZATION_MAX_SPEAKERS` | Faixa de falantes |
+| `DIARIZATION_MODEL` | ID do pipeline HF (padrão: community-1) |
+
+Teste: `python scripts/test_pyannote_diarization.py audio.mp3 --transcribe`
+
+Na primeira execução o modelo pyannote é baixado (internet + HF_TOKEN). Depois funciona offline.
 
 ## Interface gráfica (recomendado)
 
@@ -221,12 +338,14 @@ Distribua a **pasta inteira** `dist\AudioTranscriber\`. **Não** execute nada em
 | FFmpeg | PATH do sistema **ou** `ffmpeg.exe` ao lado do `.exe` |
 | Log | `last_run.log` na pasta de saída do `.txt` |
 | API | Não vai no `.exe` por padrão; foco na GUI |
+| Diarização | Incluída no build (`pip install -e ".[diarization]"` antes de `build_exe.ps1`); `secrets\.env` com `HF_TOKEN` na pasta do `.exe` |
 
 ### Uso offline do .exe
 
 1. Rode uma vez **com internet** para baixar o modelo.
 2. (Opcional) Copie o cache do Hugging Face para a máquina alvo.
-3. Coloque `ffmpeg.exe` na pasta `dist\AudioTranscriber\` se não houver FFmpeg no PATH.
+3. Coloque `ffmpeg.exe` na pasta `dist\AudioTranscriber\` se não houver FFmpeg no PATH (o script de build copia automaticamente quando possível).
+4. Para **identificar falantes**: `dist\AudioTranscriber\secrets\.env` com `HF_TOKEN` (o build copia de `secrets\.env` do projeto se existir).
 
 ## Solução de problemas
 
@@ -265,20 +384,13 @@ A pasta de saída é **opcional**. Se ficar em branco, o app usa a pasta do arqu
 
 ## Próximos passos
 
-### Legendas com quem está falando (diarização)
+### Legendas com quem está falando
 
-Objetivo: saída tipo `[Maria] [00:12 - 00:18] texto` ou SRT/VTT com nome/rótulo estável por pessoa, sem trocar o mesmo falante por vários `SPEAKER_XX`.
-
-| Etapa | O que fazer |
-|-------|-------------|
-| **1. Escolher modelo** | Avaliar e fixar um backend principal: [pyannote/speaker-diarization](https://huggingface.co/pyannote/speaker-diarization-3.1) (melhor qualidade, HF + termos de uso), [pyannote community](https://huggingface.co/pyannote/speaker-diarization-community-1) (já esboçado em `diarization_pyannote.py`), ou WhisperX diarization. Manter MFCC local só como fallback offline. |
-| **2. Critérios de aceite** | Testar com 1 narrador, 2 vozes distintas e sobreposição leve; medir % de segmentos com falante errado e estabilidade do rótulo ao longo do áudio. |
-| **3. Alinhar ao Whisper** | Garantir que cada segmento `start/end/text` do faster-whisper receba o falante dominante no intervalo (já esboçado em `assign_speaker_labels`). |
-| **4. Exportação** | Estender `srt` / `vtt` / `json` com campo `speaker` ou prefixo na legenda; GUI com checkbox de novo após qualidade aceitável. |
-| **5. Empacotamento** | Decidir se o `.exe` inclui diarização (tamanho + licenças) ou permanece extra pip / download sob demanda. |
-| **6. Nomes reais (opcional)** | Depois da diarização: cadastro “SPEAKER_00 → Ana” na UI ou arquivo sidecar `.speakers.json`. |
-
-Referência de código ao reativar a UI: `gui/views/layout.py` (checkbox), `gui/app.py` (`_speaker_id_ready`, thread args), `gui/controller.py` (`diarize=`).
+- [x] Backend pyannote/HF integrado (`DIARIZATION_BACKEND=pyannote` por padrão)  
+- [ ] **Nomes reais** (`SPEAKER_00` → Maria) — ver [`docs/SPEAKER_NAMES.md`](docs/SPEAKER_NAMES.md)  
+- [ ] Exportar `speaker` em SRT/VTT/JSON  
+- [x] Diarização pyannote no `.exe` (build com extra `[diarization]`)  
+- [ ] Testes automatizados com áudios de referência (1 vs 2 falantes)
 
 ## Roadmap
 

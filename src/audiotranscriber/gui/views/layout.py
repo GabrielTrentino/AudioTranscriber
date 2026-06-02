@@ -236,7 +236,7 @@ def build_quality_section(app, frame: ttk.Frame, padding: dict) -> None:
 
     ttk.Checkbutton(
         options_frame,
-        text="Incluir timestamp (início - fim de cada trecho)",
+        text="Incluir [início - fim]",
         variable=app.include_timestamps,
     ).pack(anchor="w")
 

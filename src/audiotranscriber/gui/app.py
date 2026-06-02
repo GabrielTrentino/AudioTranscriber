@@ -219,8 +219,13 @@ class TranscriberApp(tk.Tk):
             filetypes=AUDIO_VIDEO_TYPES,
         )
         if path:
+            stem = Path(path).stem
             self.input_path.set(path)
-            self.output_name.set(Path(path).stem)
+            self.output_name.set(stem)
+            if hasattr(self, "output_name_entry"):
+                self.output_name_entry.delete(0, tk.END)
+                self.output_name_entry.insert(0, stem)
+            self.update_idletasks()
 
     def _pick_output(self) -> None:
         path = filedialog.askdirectory(title="Selecionar pasta de saída")

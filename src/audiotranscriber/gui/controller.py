@@ -72,7 +72,7 @@ class TranscriptionController:
         on_progress(0.0, "preparing")
         log(f"transcribe {input_path.name} -> {output_dir}")
         if identify_speakers:
-            log("identificação de falantes (pyannote/HF) ativada")
+            log("identificação de falantes ativada")
         try:
             output_file = self._service.transcribe_to_file(
                 input_path,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from audiotranscriber.core.exceptions import TranscriptionCancelled
@@ -13,6 +14,12 @@ from audiotranscriber.services.diarization_backend import (
     is_diarization_available,
 )
 from audiotranscriber.core.memory import resolve_memory_settings
+from audiotranscriber.core.speaker_names import (
+    load_speaker_names,
+    mapping_from_labeled,
+    speakers_sidecar_path,
+    write_speaker_names,
+)
 from audiotranscriber.core.model_manager import ModelManager, get_model_manager
 from audiotranscriber.core.settings import TranscriptionSettings
 
@@ -60,6 +67,12 @@ def _extension_for_format(export_format: str) -> str:
     return ".txt"
 
 
+@dataclass
+class TranscriptionResult:
+    text: str
+    labeled_segments: list[dict] | None = None
+
+
 class TranscriptionService:
     """Orquestra carregamento do modelo, transcrição e gravação."""
 
@@ -78,9 +91,10 @@ class TranscriptionService:
         include_timestamps: bool | None = None,
         export_format: str = "txt",
         diarize: bool = False,
+        speaker_name_map: dict[str, str] | None = None,
         on_progress: Callable[[float, str | None], None] | None = None,
         is_cancelled: Callable[[], bool] | None = None,
-    ) -> str:
+    ) -> TranscriptionResult:
         cfg = settings or TranscriptionSettings.from_env()
         fmt = export_format.lower()
 
@@ -146,19 +160,28 @@ class TranscriptionService:
             if fmt == "json":
                 import json
 
-                return json.dumps(labeled, ensure_ascii=False, indent=2)
+                return TranscriptionResult(
+                    text=json.dumps(labeled, ensure_ascii=False, indent=2),
+                    labeled_segments=labeled,
+                )
             with_timestamps = include_timestamps is True
-            return format_labeled_segments(
-                labeled,
-                include_timestamps=with_timestamps,
+            return TranscriptionResult(
+                text=format_labeled_segments(
+                    labeled,
+                    include_timestamps=with_timestamps,
+                    speaker_names=speaker_name_map,
+                ),
+                labeled_segments=labeled,
             )
 
         if on_progress:
             on_progress(1.0, "saving")
 
         if fmt in ("srt", "vtt", "json"):
-            return format_export(collected, fmt)
-        return format_segments(collected, output_format)
+            return TranscriptionResult(text=format_export(collected, fmt))
+        return TranscriptionResult(
+            text=format_segments(collected, output_format)
+        )
 
     def save_transcription(
         self,
@@ -188,19 +211,27 @@ class TranscriptionService:
         on_progress: Callable[[float, str | None], None] | None = None,
         is_cancelled: Callable[[], bool] | None = None,
     ) -> Path:
-        text = self.transcribe_path(
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_file = output_dir / resolve_output_filename(
+            output_name, input_path, export_format
+        )
+        sidecar = speakers_sidecar_path(output_file)
+        name_map = load_speaker_names(sidecar) if diarize else {}
+
+        result = self.transcribe_path(
             input_path,
             settings=settings,
             include_timestamps=include_timestamps,
             export_format=export_format,
             diarize=diarize,
+            speaker_name_map=name_map or None,
             on_progress=on_progress,
             is_cancelled=is_cancelled,
         )
-        return self.save_transcription(
-            input_path,
-            output_dir,
-            text,
-            output_name,
-            export_format=export_format,
-        )
+        output_file.write_text(result.text, encoding="utf-8")
+        if diarize and result.labeled_segments:
+            write_speaker_names(
+                sidecar,
+                mapping_from_labeled(result.labeled_segments, name_map),
+            )
+        return output_file

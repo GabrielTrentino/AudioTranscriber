@@ -95,7 +95,7 @@ async def transcribe(
                 settings=settings,
                 include_timestamps=timestamps,
                 export_format=export_format,
-            ),
+            ).text,
         )
 
         return {"text": text, "format": export_format}

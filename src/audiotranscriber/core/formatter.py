@@ -1,4 +1,5 @@
 from audiotranscriber.config import get_app_config
+from audiotranscriber.core.speaker_names import display_speaker
 
 
 def _format_timestamp(seconds: float) -> str:
@@ -46,6 +47,7 @@ def format_labeled_segments(
     *,
     include_timestamps: bool = False,
     pause_gap: float | None = None,
+    speaker_names: dict[str, str] | None = None,
 ) -> str:
     """Formata trechos com falante e, opcionalmente, intervalo de tempo."""
     cfg = get_app_config()
@@ -61,7 +63,9 @@ def format_labeled_segments(
 
         start = float(item["start"])
         end = float(item["end"])
-        speaker = item.get("speaker", "SPEAKER")
+        speaker = display_speaker(
+            str(item.get("speaker", "SPEAKER")), speaker_names
+        )
 
         if prev_end is not None and start - prev_end >= gap:
             lines.append("")

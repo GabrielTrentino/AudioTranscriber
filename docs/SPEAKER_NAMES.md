@@ -50,9 +50,24 @@ Se o usuário souber quantos falantes há:
 - Nomes reais dependem sempre de input humano ou cadastro prévio.
 - Vozes muito parecidas podem ser agrupadas errado — nomes não corrigem isso.
 
-## Tarefas técnicas
+## Uso hoje (sidecar automático)
 
-- [ ] Escrever/ler `.speakers.json` em `core/` ou `services/`
-- [ ] `format_labeled_segments()` aceitar mapa `speaker → nome`
+1. Transcreva com **Identificar falantes** ativado.
+2. Na pasta do `.txt`, será criado `meu_audio.speakers.json`, por exemplo:
+
+```json
+{
+  "SPEAKER_00": "",
+  "SPEAKER_01": ""
+}
+```
+
+3. Preencha os valores: `"SPEAKER_00": "Maria"`, `"SPEAKER_01": "João"`.
+4. Transcreva de novo (mesmo áudio e mesmo nome de saída) — o `.txt` passa a usar os nomes.
+
+## Tarefas técnicas (futuro)
+
+- [x] Escrever/ler `.speakers.json` (`core/speaker_names.py`)
+- [x] `format_labeled_segments()` com mapa `speaker → nome`
 - [ ] Botão “Editar nomes dos falantes…” na GUI
 - [ ] Export SRT/VTT com prefixo de nome

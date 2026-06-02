@@ -166,6 +166,8 @@ python -m audiotranscriber transcribe audio.mp3 --diarize --timestamps
 
 Saída exemplo: `[SPEAKER_00] [00:12 - 00:18] texto do trecho`
 
+**Nomes reais (Maria, João, …):** após transcrever com falantes, edite o arquivo `{nome}.speakers.json` na pasta do `.txt` e preencha os nomes. Na próxima transcrição do mesmo arquivo de saída, os rótulos usam os nomes do JSON. Detalhes: [`docs/SPEAKER_NAMES.md`](docs/SPEAKER_NAMES.md).
+
 **Variáveis opcionais**
 
 | Variável | Descrição |
@@ -207,7 +209,7 @@ O idioma pode ser `pt`, `en`, `es`, etc., ou **`auto`** para detecção automát
 
 ### Timestamps
 
-Marque **Incluir timestamp** para gravar início e fim de cada trecho:
+Marque **Incluir [início - fim]** para gravar cada trecho neste formato:
 
 ```text
 [00:00:02 - 00:00:08] Bom dia, vamos começar a reunião.

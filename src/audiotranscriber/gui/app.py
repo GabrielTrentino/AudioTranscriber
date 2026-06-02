@@ -220,8 +220,7 @@ class TranscriberApp(tk.Tk):
         )
         if path:
             self.input_path.set(path)
-            if not self.output_name.get().strip():
-                self.output_name.set(Path(path).stem)
+            self.output_name.set(Path(path).stem)
 
     def _pick_output(self) -> None:
         path = filedialog.askdirectory(title="Selecionar pasta de saída")

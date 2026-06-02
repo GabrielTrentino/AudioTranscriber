@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Tokens locais (HF, API keys, etc.)
+secrets/*
+!secrets/.env.example

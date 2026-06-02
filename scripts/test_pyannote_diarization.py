@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Teste de diarização local (sem Hugging Face).
+"""Teste de diarização pyannote (Hugging Face).
 
   pip install -e ".[diarization]"
+  set HF_TOKEN=hf_...
   python scripts/test_pyannote_diarization.py audio.mp3 --transcribe
 """
 
@@ -18,7 +19,7 @@ if str(_SRC) not in sys.path:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Teste diarização local")
+    parser = argparse.ArgumentParser(description="Teste diarização pyannote/HF")
     parser.add_argument("audio", help="Arquivo de áudio ou vídeo")
     parser.add_argument(
         "--transcribe",
@@ -32,13 +33,13 @@ def main() -> int:
         print(f"Arquivo não encontrado: {audio_path}", file=sys.stderr)
         return 1
 
-    from audiotranscriber.services.diarization_local import (
+    from audiotranscriber.services.diarization_pyannote import (
         assign_speakers,
         install_hint,
-        is_local_diarization_available,
+        is_pyannote_ready,
     )
 
-    if not is_local_diarization_available():
+    if not is_pyannote_ready():
         print(install_hint(), file=sys.stderr)
         return 1
 

@@ -1,5 +1,5 @@
 """
-Diarização com pyannote (community-1) — módulo experimental, separado do core.
+Diarização com pyannote (Hugging Face) — speaker-diarization-community-1.
 
 Requisitos:
   pip install "audiotranscriber[diarization]"
@@ -9,19 +9,29 @@ Requisitos:
 
 from __future__ import annotations
 
-import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-_PIPELINE_ID = "pyannote/speaker-diarization-community-1"
+from audiotranscriber.services.diarization_common import (
+    assign_speakers_to_segments,
+    collect_pyannote_turns,
+    diarization_model_id,
+    diarization_speaker_count_options,
+    hf_token,
+    normalize_speaker_labels,
+)
+
+_PIPELINE_ACCEPT_URL = (
+    "https://huggingface.co/pyannote/speaker-diarization-community-1"
+)
 
 
 class PyannoteNotAvailableError(ImportError):
     """pyannote.audio não instalado ou token HF ausente."""
 
 
-def is_pyannote_available() -> bool:
+def is_pyannote_installed() -> bool:
     try:
         import pyannote.audio  # noqa: F401
 
@@ -30,68 +40,96 @@ def is_pyannote_available() -> bool:
         return False
 
 
+def is_pyannote_ready() -> bool:
+    return is_pyannote_installed() and hf_token() is not None
+
+
+def is_pyannote_available() -> bool:
+    """Compatibilidade com código que só checava import."""
+    return is_pyannote_ready()
+
+
 def install_hint() -> str:
     return (
         "Instale: pip install \"audiotranscriber[diarization]\"\n"
-        "Aceite os termos do modelo no Hugging Face e defina HF_TOKEN."
+        f"Aceite os termos do modelo: {_PIPELINE_ACCEPT_URL}\n"
+        "Defina HF_TOKEN com um token de leitura do Hugging Face."
     )
 
 
-def _hf_token() -> str | None:
-    for key in ("HF_TOKEN", "HUGGINGFACE_TOKEN", "HUGGING_FACE_HUB_TOKEN"):
-        value = os.getenv(key, "").strip()
-        if value:
-            return value
-    return None
-
-
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=2)
 def _load_pipeline(device: str):
     import torch
     from pyannote.audio import Pipeline
 
-    token = _hf_token()
+    token = hf_token()
     if not token:
         raise PyannoteNotAvailableError(
             "Token Hugging Face ausente. Defina HF_TOKEN no ambiente.\n" + install_hint()
         )
 
-    pipeline = Pipeline.from_pretrained(_PIPELINE_ID, token=token)
+    model_id = diarization_model_id()
+    pipeline = Pipeline.from_pretrained(model_id, token=token)
     torch_device = torch.device("cuda" if device == "cuda" else "cpu")
     pipeline.to(torch_device)
     return pipeline
 
 
-def _collect_turns(diarization_output) -> list[tuple[float, float, str]]:
-    turns: list[tuple[float, float, str]] = []
-    exclusive = getattr(diarization_output, "exclusive_speaker_diarization", None)
-    if exclusive is not None:
-        for turn, speaker in exclusive:
-            turns.append((float(turn.start), float(turn.end), str(speaker)))
-        return turns
+def _load_audio_input(audio_path: Path, sample_rate: int = 16000) -> dict:
+    """Decodifica via FFmpeg (evita torchcodec quebrado no Windows)."""
+    import subprocess
 
-    annotation = getattr(diarization_output, "speaker_diarization", diarization_output)
-    if hasattr(annotation, "itertracks"):
-        for turn, _, speaker in annotation.itertracks(yield_label=True):
-            turns.append((float(turn.start), float(turn.end), str(speaker)))
-        return turns
+    import numpy as np
+    import torch
 
-    for turn, speaker in annotation:
-        turns.append((float(turn.start), float(turn.end), str(speaker)))
-    return turns
+    from audiotranscriber.core.startup_checks import find_ffmpeg
+
+    ffmpeg = find_ffmpeg()
+    if not ffmpeg:
+        raise RuntimeError(
+            "FFmpeg não encontrado. Instale FFmpeg ou coloque ffmpeg.exe na pasta do app."
+        )
+
+    cmd = [
+        str(ffmpeg),
+        "-nostdin",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        str(audio_path),
+        "-f",
+        "f32le",
+        "-acodec",
+        "pcm_f32le",
+        "-ac",
+        "1",
+        "-ar",
+        str(sample_rate),
+        "-",
+    ]
+    proc = subprocess.run(cmd, capture_output=True)
+    if proc.returncode != 0:
+        err = proc.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"FFmpeg falhou ao decodificar áudio: {err}")
+
+    samples = np.frombuffer(proc.stdout, dtype=np.float32)
+    if samples.size == 0:
+        raise RuntimeError("Áudio vazio ou sem faixa de som detectável.")
+
+    waveform = torch.from_numpy(samples.copy()).unsqueeze(0)
+    return {"waveform": waveform, "sample_rate": sample_rate}
 
 
-def _speaker_for_interval(
-    turns: list[tuple[float, float, str]], start: float, end: float
-) -> str:
-    best_speaker = "SPEAKER_UNKNOWN"
-    best_overlap = 0.0
-    for turn_start, turn_end, speaker in turns:
-        overlap = max(0.0, min(end, turn_end) - max(start, turn_start))
-        if overlap > best_overlap:
-            best_overlap = overlap
-            best_speaker = speaker
-    return best_speaker
+def _run_diarization(pipeline, audio_path: Path):
+    opts = diarization_speaker_count_options()
+    kwargs = {
+        key: value
+        for key, value in opts.items()
+        if value is not None
+    }
+    audio_in = _load_audio_input(audio_path)
+    return pipeline(audio_in, **kwargs)
 
 
 def assign_speakers(
@@ -101,27 +139,17 @@ def assign_speakers(
     device: str = "cpu",
     language: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Atribui rótulo de falante a cada segmento transcrito (pyannote offline após 1º download)."""
-    del language  # reservado para extensões futuras
-    if not is_pyannote_available():
+    """Atribui rótulo de falante a cada segmento transcrito (pyannote + HF)."""
+    del language
+    if not is_pyannote_installed():
         raise PyannoteNotAvailableError(install_hint())
+    if not hf_token():
+        raise PyannoteNotAvailableError(
+            "Token Hugging Face ausente. Defina HF_TOKEN.\n" + install_hint()
+        )
 
     pipeline = _load_pipeline(device)
-    diarization = pipeline(str(audio_path))
-    turns = _collect_turns(diarization)
-
-    labeled: list[dict[str, Any]] = []
-    for segment in segments:
-        text = segment.text.strip()
-        if not text:
-            continue
-        speaker = _speaker_for_interval(turns, float(segment.start), float(segment.end))
-        labeled.append(
-            {
-                "start": float(segment.start),
-                "end": float(segment.end),
-                "text": text,
-                "speaker": speaker,
-            }
-        )
-    return labeled
+    diarization = _run_diarization(pipeline, audio_path)
+    turns = collect_pyannote_turns(diarization)
+    labeled = assign_speakers_to_segments(turns, segments)
+    return normalize_speaker_labels(labeled)

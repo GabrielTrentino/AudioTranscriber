@@ -63,7 +63,7 @@ class TranscriptionController:
         output_name: str | None,
         settings: TranscriptionSettings,
         include_timestamps: bool,
-        # identify_speakers: bool = False,
+        identify_speakers: bool = False,
         *,
         on_progress: Callable[[float, str | None], None],
         is_cancelled: Callable[[], bool],
@@ -71,8 +71,8 @@ class TranscriptionController:
     ) -> Path:
         on_progress(0.0, "preparing")
         log(f"transcribe {input_path.name} -> {output_dir}")
-        # if identify_speakers:
-        #     log("identificação de falantes ativada")
+        if identify_speakers:
+            log("identificação de falantes (pyannote/HF) ativada")
         try:
             output_file = self._service.transcribe_to_file(
                 input_path,
@@ -80,7 +80,7 @@ class TranscriptionController:
                 output_name,
                 settings=settings,
                 include_timestamps=include_timestamps,
-                diarize=False,  # identify_speakers — UI desativada; ver README
+                diarize=identify_speakers,
                 on_progress=on_progress,
                 is_cancelled=is_cancelled,
             )
@@ -100,7 +100,7 @@ class TranscriptionController:
         use_input_folder: bool,
         settings: TranscriptionSettings,
         include_timestamps: bool,
-        # identify_speakers: bool = False,
+        identify_speakers: bool = False,
         *,
         on_progress: Callable[[float, str | None], None],
         is_cancelled: Callable[[], bool],
@@ -142,7 +142,7 @@ class TranscriptionController:
                     output_name=None,
                     settings=settings,
                     include_timestamps=include_timestamps,
-                    diarize=False,  # identify_speakers — UI desativada; ver README
+                    diarize=identify_speakers,
                     on_progress=file_progress,
                     is_cancelled=is_cancelled,
                 )

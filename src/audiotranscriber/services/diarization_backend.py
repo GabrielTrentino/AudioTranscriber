@@ -1,4 +1,4 @@
-"""Backend de diarização: local (padrão), pyannote ou whisperx via env."""
+"""Backend de diarização: pyannote/HF (padrão), local ou whisperx via env."""
 
 from __future__ import annotations
 
@@ -6,21 +6,23 @@ import os
 from pathlib import Path
 from typing import Any
 
+_DEFAULT_BACKEND = "pyannote"
+
 
 def diarization_backend_name() -> str:
-    return os.getenv("DIARIZATION_BACKEND", "local").strip().lower()
+    return os.getenv("DIARIZATION_BACKEND", _DEFAULT_BACKEND).strip().lower()
 
 
 def is_diarization_available() -> bool:
     name = diarization_backend_name()
     if name == "whisperx":
-        from audiotranscriber.services.diarization import is_diarization_available
+        from audiotranscriber.services.diarization import is_whisperx_diarization_ready
 
-        return is_diarization_available()
+        return is_whisperx_diarization_ready()
     if name == "pyannote":
-        from audiotranscriber.services.diarization_pyannote import is_pyannote_available
+        from audiotranscriber.services.diarization_pyannote import is_pyannote_ready
 
-        return is_pyannote_available()
+        return is_pyannote_ready()
     from audiotranscriber.services.diarization_local import is_local_diarization_available
 
     return is_local_diarization_available()

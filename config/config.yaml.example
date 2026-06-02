@@ -22,3 +22,10 @@ default_quality_preset: equilibrada
 # cors_origins: http://localhost:3000
 # rate_limit_requests: 60
 # rate_limit_window_seconds: 60
+
+# Diarização (pyannote / Hugging Face) — ver README
+# diarization_backend: pyannote
+# HF_TOKEN definido no ambiente (não coloque o token neste arquivo)
+# diarization_num_speakers: 2
+# diarization_min_speakers: 1
+# diarization_max_speakers: 4

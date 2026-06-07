@@ -13,6 +13,7 @@ from audiotranscriber.services.diarization_backend import (
     diarization_install_hint,
     is_diarization_available,
 )
+from audiotranscriber.core.device import normalize_device
 from audiotranscriber.core.memory import resolve_memory_settings
 from audiotranscriber.core.speaker_names import (
     load_speaker_names,
@@ -154,7 +155,7 @@ class TranscriptionService:
             labeled = assign_speaker_labels(
                 Path(path),
                 collected,
-                device=self.device,
+                device=normalize_device(cfg.device),
                 language=lang,
             )
             if fmt == "json":

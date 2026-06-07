@@ -21,6 +21,7 @@ class QualityFormState:
     compute_type: str
     beam_size: str
     language: str
+    device: str = "cpu"
 
     def build_settings(self) -> TranscriptionSettings:
         preset_key = self.quality_labels.get(
@@ -29,6 +30,7 @@ class QualityFormState:
         if preset_key != "personalizado":
             settings = TranscriptionSettings.from_quality_preset(preset_key)
             settings.language = self.language
+            settings.device = self.device
             return settings
 
         return TranscriptionSettings(
@@ -36,6 +38,7 @@ class QualityFormState:
             compute_type=self.compute_type,
             memory_profile=self.memory_profile,
             language=self.language,
+            device=self.device,
             beam_size=int(self.beam_size),
             quality_preset="personalizado",
         )

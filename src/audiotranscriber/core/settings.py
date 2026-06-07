@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from audiotranscriber.config import get_app_config
+from audiotranscriber.core.device import normalize_device
 
 
 @dataclass
@@ -9,6 +10,7 @@ class TranscriptionSettings:
     compute_type: str = "int8"
     memory_profile: str = "balanced"
     language: str = "pt"
+    device: str = "cpu"
     beam_size: int | None = None
     quality_preset: str = "equilibrada"
 
@@ -24,18 +26,22 @@ class TranscriptionSettings:
             compute_type=cfg.default_compute_type,
             memory_profile=cfg.default_memory_profile,
             language=cfg.default_language,
+            device=normalize_device(cfg.device),
             beam_size=cfg.beam_size,
             quality_preset="personalizado",
         )
 
     @classmethod
     def from_quality_preset(cls, preset: str) -> "TranscriptionSettings":
+        cfg = get_app_config()
+        device = normalize_device(cfg.device)
         presets = {
             "rapida": cls(
                 model_size="base",
                 memory_profile="low",
                 beam_size=1,
                 compute_type="int8",
+                device=device,
                 quality_preset="rapida",
             ),
             "equilibrada": cls(
@@ -43,6 +49,7 @@ class TranscriptionSettings:
                 memory_profile="balanced",
                 beam_size=5,
                 compute_type="int8",
+                device=device,
                 quality_preset="equilibrada",
             ),
             "alta": cls(
@@ -50,6 +57,7 @@ class TranscriptionSettings:
                 memory_profile="high",
                 beam_size=5,
                 compute_type="int8",
+                device=device,
                 quality_preset="alta",
             ),
         }

@@ -4,7 +4,7 @@ import threading
 
 from faster_whisper import WhisperModel
 
-from audiotranscriber.config import get_app_config
+from audiotranscriber.core.device import normalize_device
 from audiotranscriber.core.memory import resolve_memory_settings
 from audiotranscriber.core.settings import TranscriptionSettings
 
@@ -16,19 +16,21 @@ class ModelManager:
         self._lock = threading.Lock()
         self._model: WhisperModel | None = None
         self._cache_key: tuple | None = None
+        self._active_device: str = "cpu"
 
     @property
     def device(self) -> str:
-        return get_app_config().device
+        return self._active_device
 
     def get_model(self, settings: TranscriptionSettings) -> WhisperModel:
+        device = normalize_device(settings.device)
         memory = resolve_memory_settings(
             settings.memory_profile,
             beam_size=settings.beam_size,
         )
         cache_key = (
             settings.model_size,
-            self.device,
+            device,
             settings.compute_type,
             memory["cpu_threads"],
             memory["num_workers"],
@@ -38,12 +40,13 @@ class ModelManager:
             if self._model is None or self._cache_key != cache_key:
                 self._model = WhisperModel(
                     settings.model_size,
-                    device=self.device,
+                    device=device,
                     compute_type=settings.compute_type,
                     cpu_threads=memory["cpu_threads"],
                     num_workers=memory["num_workers"],
                 )
                 self._cache_key = cache_key
+                self._active_device = device
             return self._model
 
 

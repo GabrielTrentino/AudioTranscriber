@@ -6,6 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from audiotranscriber.core.device import normalize_device
 from audiotranscriber.core.settings import TranscriptionSettings
 from audiotranscriber.services import JobQueue, TranscriptionService
 
@@ -25,6 +26,8 @@ def _build_settings(args: argparse.Namespace) -> TranscriptionSettings:
         settings.compute_type = args.compute_type
     if args.beam_size is not None:
         settings.beam_size = args.beam_size
+    if args.device:
+        settings.device = normalize_device(args.device)
     return settings
 
 
@@ -177,6 +180,11 @@ def build_parser() -> argparse.ArgumentParser:
     common.add_argument("--language", default=None, help="Idioma (pt, en, auto, …)")
     common.add_argument("--memory-profile", dest="memory_profile")
     common.add_argument("--compute-type", dest="compute_type")
+    common.add_argument(
+        "--device",
+        choices=("cpu", "cuda"),
+        help="Dispositivo Whisper: cpu ou cuda (GPU)",
+    )
     common.add_argument("--beam-size", dest="beam_size", type=int)
     common.add_argument(
         "--format",

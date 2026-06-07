@@ -229,6 +229,19 @@ def build_quality_section(app, frame: ttk.Frame, padding: dict) -> None:
     )
     app._language_combo.grid(row=2, column=1, sticky="w", padx=6, pady=2)
 
+    ttk.Label(app.advanced_frame, text="Dispositivo:").grid(
+        row=2, column=2, sticky="w"
+    )
+    app._device_combo = ttk.Combobox(
+        app.advanced_frame,
+        textvariable=app.whisper_device,
+        values=[label for label, _ in app._device_choices],
+        state="readonly",
+        width=12,
+    )
+    app._device_combo.grid(row=2, column=3, sticky="w", padx=6, pady=2)
+    app._device_combo.bind("<<ComboboxSelected>>", app._on_device_selected)
+
     cfg_frame.columnconfigure(1, weight=1)
 
     options_frame = ttk.Frame(frame)

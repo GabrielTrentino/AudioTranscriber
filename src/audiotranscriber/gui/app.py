@@ -8,7 +8,14 @@ from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
+from audiotranscriber.config import get_app_config
+from audiotranscriber.core.device import (
+    available_device_choices,
+    default_compute_type_for_device,
+    normalize_device,
+)
 from audiotranscriber.core.exceptions import TranscriptionCancelled
+from audiotranscriber.core.paths import display_filename, normalize_path
 from audiotranscriber.core.startup_checks import (
     format_issues,
     has_blocking_errors,
@@ -38,9 +45,16 @@ class TranscriberApp(tk.Tk):
         self.compute_type = tk.StringVar(value="int8")
         self.beam_size = tk.StringVar(value="5")
         self.language = tk.StringVar(value="pt")
+        self._device_choices = available_device_choices()
+        self._device_labels = {label: value for label, value in self._device_choices}
+        self._device_keys = {value: label for label, value in self._device_choices}
+        default_device = normalize_device(get_app_config().device)
+        self.whisper_device = tk.StringVar(
+            value=self._device_keys.get(default_device, self._device_choices[0][0])
+        )
         self.progress_text = tk.StringVar(value="")
         self._controller = TranscriptionController()
-        self.status = tk.StringVar(value=f"Dispositivo: {self._controller.device}")
+        self.status = tk.StringVar(value="")
 
         self._batch_paths: list[str] = []
         self._progress_queue: queue.SimpleQueue = queue.SimpleQueue()
@@ -63,6 +77,7 @@ class TranscriberApp(tk.Tk):
         self.quality_preset.set(self._quality_keys["equilibrada"])
         self._apply_quality_preset("equilibrada")
         self._update_preset_fields_state("equilibrada")
+        self._refresh_status_from_form()
 
     def _is_batch_mode(self) -> bool:
         return self.files_notebook.index(self.files_notebook.select()) == 1
@@ -75,12 +90,13 @@ class TranscriberApp(tk.Tk):
         if not paths:
             return
 
-        existing = set(self._batch_paths)
+        existing = {normalize_path(p) for p in self._batch_paths}
         for path in paths:
-            if path not in existing:
-                existing.add(path)
-                self._batch_paths.append(path)
-                self.batch_listbox.insert(tk.END, Path(path).name)
+            resolved = str(normalize_path(path))
+            if resolved not in existing:
+                existing.add(resolved)
+                self._batch_paths.append(resolved)
+                self.batch_listbox.insert(tk.END, display_filename(resolved))
 
     def _batch_remove_selected(self) -> None:
         selection = list(self.batch_listbox.curselection())
@@ -99,6 +115,7 @@ class TranscriberApp(tk.Tk):
         key = self._quality_labels.get(label, "equilibrada")
         self._apply_quality_preset(key)
         self._update_preset_fields_state(key)
+        self._refresh_status_from_form()
 
     def _apply_quality_preset(self, preset_key: str) -> None:
         if preset_key == "personalizado":
@@ -119,6 +136,29 @@ class TranscriberApp(tk.Tk):
         label = self.quality_preset.get()
         return self._quality_labels.get(label, "equilibrada")
 
+    def _selected_device_value(self) -> str:
+        label = self.whisper_device.get()
+        return normalize_device(self._device_labels.get(label, "cpu"))
+
+    def _on_device_selected(self, _event=None) -> None:
+        device = self._selected_device_value()
+        suggested = default_compute_type_for_device(device)
+        current = self.compute_type.get()
+        if device == "cuda" and current == "int8":
+            self.compute_type.set(suggested)
+        elif device == "cpu" and current == "float16":
+            self.compute_type.set(suggested)
+        self._refresh_status_from_form()
+
+    def _refresh_status_from_form(self) -> None:
+        settings = self._build_settings()
+        device_label = self.whisper_device.get()
+        self.status.set(
+            f"Dispositivo: {device_label} | "
+            f"Modelo: {settings.model_size} | "
+            f"Precisão: {settings.compute_type}"
+        )
+
     def _build_settings(self) -> TranscriptionSettings:
         return QualityFormState(
             quality_preset_label=self.quality_preset.get(),
@@ -128,6 +168,7 @@ class TranscriberApp(tk.Tk):
             compute_type=self.compute_type.get(),
             beam_size=self.beam_size.get(),
             language=self.language.get(),
+            device=self._selected_device_value(),
         ).build_settings()
 
     def _app_root(self) -> Path:
@@ -200,7 +241,9 @@ class TranscriberApp(tk.Tk):
             self.status.set(f"Erro ao gravar log em {path}: {exc}")
 
     def _update_config_status(self, settings: TranscriptionSettings) -> None:
+        device_label = self._device_keys.get(settings.device, settings.device)
         self.status.set(
+            f"Dispositivo: {device_label} | "
             f"Modelo: {settings.model_size} | "
             f"Memória: {settings.memory_profile} | "
             f"Precisão: {settings.compute_type} | "
@@ -219,8 +262,9 @@ class TranscriberApp(tk.Tk):
             filetypes=AUDIO_VIDEO_TYPES,
         )
         if path:
-            stem = Path(path).stem
-            self.input_path.set(path)
+            resolved = str(normalize_path(path))
+            stem = Path(resolved).stem
+            self.input_path.set(resolved)
             self.output_name.set(stem)
             if hasattr(self, "output_name_entry"):
                 self.output_name_entry.delete(0, tk.END)
@@ -451,6 +495,7 @@ class TranscriberApp(tk.Tk):
             getattr(self, "batch_output_entry", None),
             self.batch_listbox,
             getattr(self, "identify_speakers_btn", None),
+            getattr(self, "_device_combo", None),
         ):
             if widget is not None:
                 widget.configure(state=state)
@@ -466,15 +511,19 @@ class TranscriberApp(tk.Tk):
             for combo in self._preset_combos:
                 combo.configure(state="disabled")
             self._language_combo.configure(state="disabled")
+            if hasattr(self, "_device_combo"):
+                self._device_combo.configure(state="disabled")
         else:
             self._stop_progress_timer()
             self.progress_bar.stop()
             self.progress_bar.configure(mode="determinate")
             self.quality_combo.configure(state="readonly")
             self._language_combo.configure(state="readonly")
+            if hasattr(self, "_device_combo"):
+                self._device_combo.configure(state="readonly")
             self._update_preset_fields_state(self._get_preset_key())
             if not self.progress_text.get().strip():
-                self.status.set(f"Dispositivo: {self._controller.device}")
+                self._refresh_status_from_form()
 
     def _start_transcription(self) -> None:
         if self._is_batch_mode():
